@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE - 执行对比</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/pages/dashboard.css">
+    <link rel="stylesheet" href="/static/css/compare.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+    <div class="dashboard-layout">
+        <div class="workspace-split">
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('open')">
+                <i class="ri-menu-line"></i>
+            </button>
+            <!-- Sidebar -->
+            <nav class="sidebar-nav">
+                <div class="brand">
+                    <div class="brand-logo"><i class="ri-code-s-slash-line"></i></div>
+                    <div class="brand-text"><h1>HUAYCODE</h1><span>Pro Visualizer</span></div>
+                </div>
+                <div class="nav-list">
+                    <a href="/" class="nav-link"><i class="ri-dashboard-line"></i> 控制台</a>
+                    <a href="/editor" class="nav-link"><i class="ri-code-box-line"></i> 代码编辑</a>
+                    <a href="/source" class="nav-link"><i class="ri-file-code-line"></i> 源码概览</a>
+                    <a href="/memory" class="nav-link"><i class="ri-cpu-line"></i> 内存分析</a>
+                    <a href="/visualizer" class="nav-link"><i class="ri-bar-chart-grouped-line"></i> 算法可视化</a>
+                    <a href="/compare" class="nav-link active"><i class="ri-git-merge-line"></i> 执行对比</a>
+                    <a href="/settings" class="nav-link"><i class="ri-settings-4-line"></i> 系统设置</a>
+                </div>
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">状态</span>
+                        <span class="status-val" style="color: var(--accent-success)">Ready</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">历史</span>
+                        <span class="status-val"><span id="history-count">0</span> 次执行</span>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="content-area" style="overflow: auto;">
+                <div class="compare-layout">
+                    <!-- Header -->
+                    <header class="compare-header">
+                        <div class="header-left">
+                            <h2><i class="ri-git-merge-line"></i> 执行对比分析</h2>
+                            <span class="header-desc">对比两次代码执行的差异，分析变量变化、内存消耗与执行路径</span>
+                        </div>
+                        <div class="header-actions">
+                            <button class="btn-refresh" id="btn-refresh" title="刷新历史">
+                                <i class="ri-refresh-line"></i>
+                            </button>
+                        </div>
+                    </header>
+
+                    <!-- Selection Panel -->
+                    <section class="selection-panel">
+                        <div class="selection-card" id="card-a">
+                            <div class="card-header">
+                                <span class="card-badge badge-a">A</span>
+                                <span class="card-title">基准执行</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="history-list" id="history-list-a">
+                                    <div class="empty-hint">
+                                        <i class="ri-loader-4-line spin"></i> 加载中...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="swap-btn-container">
+                            <button class="btn-swap" id="btn-swap" title="交换选择">
+                                <i class="ri-arrow-left-right-line"></i>
+                            </button>
+                        </div>
+
+                        <div class="selection-card" id="card-b">
+                            <div class="card-header">
+                                <span class="card-badge badge-b">B</span>
+                                <span class="card-title">对比执行</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="history-list" id="history-list-b">
+                                    <div class="empty-hint">
+                                        <i class="ri-loader-4-line spin"></i> 加载中...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Compare Button -->
+                    <div class="compare-action">
+                        <button class="btn-compare" id="btn-compare" disabled>
+                            <i class="ri-git-merge-line"></i> 开始对比分析
+                        </button>
+                        <span class="compare-hint" id="compare-hint">请从上方列表选择两次执行</span>
+                    </div>
+
+                    <!-- Results Section -->
+                    <div class="results-section" id="results-section" style="display: none;">
+                        <!-- Overview Stats -->
+                        <section class="results-overview">
+                            <div class="overview-card">
+                                <div class="overview-icon"><i class="ri-file-list-3-line"></i></div>
+                                <div class="overview-content">
+                                    <span class="overview-label">执行步数</span>
+                                    <div class="overview-values">
+                                        <span class="val-a" id="steps-a">--</span>
+                                        <i class="ri-arrow-right-line"></i>
+                                        <span class="val-b" id="steps-b">--</span>
+                                        <span class="val-delta" id="steps-delta"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overview-card">
+                                <div class="overview-icon"><i class="ri-bar-chart-2-line"></i></div>
+                                <div class="overview-content">
+                                    <span class="overview-label">峰值内存</span>
+                                    <div class="overview-values">
+                                        <span class="val-a" id="mem-a">--</span>
+                                        <i class="ri-arrow-right-line"></i>
+                                        <span class="val-b" id="mem-b">--</span>
+                                        <span class="val-delta" id="mem-delta"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overview-card">
+                                <div class="overview-icon"><i class="ri-code-s-slash-line"></i></div>
+                                <div class="overview-content">
+                                    <span class="overview-label">源码变更</span>
+                                    <div class="overview-values">
+                                        <span class="source-status" id="source-status">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overview-card">
+                                <div class="overview-icon"><i class="ri-route-line"></i></div>
+                                <div class="overview-content">
+                                    <span class="overview-label">公共前缀</span>
+                                    <div class="overview-values">
+                                        <span id="common-prefix">--</span>
+                                        <span class="suffix-text"> 步</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Tab Navigation -->
+                        <div class="result-tabs">
+                            <button class="tab-btn active" data-tab="variables">
+                                <i class="ri-braces-line"></i> 变量差异
+                            </button>
+                            <button class="tab-btn" data-tab="coverage">
+                                <i class="ri-file-code-line"></i> 覆盖率
+                            </button>
+                            <button class="tab-btn" data-tab="path">
+                                <i class="ri-route-line"></i> 执行路径
+                            </button>
+                            <button class="tab-btn" data-tab="memory">
+                                <i class="ri-line-chart-line"></i> 内存对比
+                            </button>
+                        </div>
+
+                        <!-- Tab Content -->
+                        <div class="tab-content" id="tab-variables">
+                            <div class="diff-panel">
+                                <div class="panel-header">
+                                    <i class="ri-braces-line"></i> 最终状态变量对比
+                                </div>
+                                <div class="variables-diff" id="variables-diff">
+                                    <div class="empty-state">无差异数据</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tab-content" id="tab-coverage" style="display: none;">
+                            <div class="diff-panel">
+                                <div class="panel-header">
+                                    <i class="ri-file-code-line"></i> 代码覆盖率差异
+                                </div>
+                                <div class="coverage-diff-container">
+                                    <div class="coverage-side">
+                                        <div class="side-header">
+                                            <span class="badge-a">A</span> 基准执行
+                                        </div>
+                                        <div class="coverage-list" id="coverage-a"></div>
+                                    </div>
+                                    <div class="coverage-divider">
+                                        <div class="divider-line"></div>
+                                    </div>
+                                    <div class="coverage-side">
+                                        <div class="side-header">
+                                            <span class="badge-b">B</span> 对比执行
+                                        </div>
+                                        <div class="coverage-list" id="coverage-b"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tab-content" id="tab-path" style="display: none;">
+                            <div class="diff-panel">
+                                <div class="panel-header">
+                                    <i class="ri-route-line"></i> 执行路径分析
+                                </div>
+                                <div class="path-analysis" id="path-analysis">
+                                    <div class="empty-state">无路径数据</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tab-content" id="tab-memory" style="display: none;">
+                            <div class="diff-panel">
+                                <div class="panel-header">
+                                    <i class="ri-line-chart-line"></i> 内存消耗趋势对比
+                                </div>
+                                <div class="memory-chart-container">
+                                    <canvas id="memory-compare-chart"></canvas>
+                                </div>
+                                <div class="memory-stats" id="memory-stats"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Chart.js -->
+    <script src="/static/lib/chart.umd.js"></script>
+    <script>
+        // State
+        let selectedA = null;
+        let selectedB = null;
+        let historyData = [];
+        let compareResult = null;
+
+        // DOM
+        const historyListA = document.getElementById('history-list-a');
+        const historyListB = document.getElementById('history-list-b');
+        const btnCompare = document.getElementById('btn-compare');
+        const compareHint = document.getElementById('compare-hint');
+        const resultsSection = document.getElementById('results-section');
+        const historyCount = document.getElementById('history-count');
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchHistory();
+            setupTabs();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('btn-refresh').addEventListener('click', fetchHistory);
+
+            document.getElementById('btn-swap').addEventListener('click', () => {
+                if (selectedA && selectedB) {
+                    const temp = selectedA;
+                    selectedA = selectedB;
+                    selectedB = temp;
+                    renderHistoryLists();
+                    updateCompareButton();
+                }
+            });
+
+            btnCompare.addEventListener('click', runComparison);
+        }
+
+        function setupTabs() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                    btn.classList.add('active');
+                    document.getElementById('tab-' + btn.dataset.tab).style.display = 'block';
+                });
+            });
+        }
+
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/api/history');
+                historyData = await res.json();
+                historyCount.textContent = historyData.length;
+                renderHistoryLists();
+            } catch (err) {
+                showToast('加载历史失败', 'error');
+            }
+        }
+
+        function renderHistoryLists() {
+            const html = historyData.length === 0
+                ? '<div class="empty-hint"><i class="ri-inbox-line"></i> 暂无执行历史<br><a href="/editor" style="color: var(--accent-primary);">去运行代码</a></div>'
+                : historyData.map(h => {
+                    const isSelectedA = selectedA === h.id;
+                    const isSelectedB = selectedB === h.id;
+                    const selectedClass = isSelectedA ? 'selected-a' : (isSelectedB ? 'selected-b' : '');
+                    return `
+                        <div class="history-item ${selectedClass}" data-id="${h.id}">
+                            <div class="item-main">
+                                <div class="item-time">${formatTime(h.timestamp)}</div>
+                                <div class="item-preview">${escapeHtml(h.source_preview || '无代码预览')}</div>
+                            </div>
+                            <div class="item-meta">
+                                <span class="meta-tag"><i class="ri-footprint-line"></i> ${h.steps}</span>
+                                <span class="meta-tag"><i class="ri-bar-chart-2-line"></i> ${formatBytes(h.peak_memory)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            historyListA.innerHTML = html;
+            historyListB.innerHTML = html;
+
+            // Add click handlers for list A
+            historyListA.querySelectorAll('.history-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const id = parseInt(item.dataset.id);
+                    selectedA = selectedA === id ? null : id;
+                    renderHistoryLists();
+                    updateCompareButton();
+                });
+            });
+
+            // Add click handlers for list B
+            historyListB.querySelectorAll('.history-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const id = parseInt(item.dataset.id);
+                    selectedB = selectedB === id ? null : id;
+                    renderHistoryLists();
+                    updateCompareButton();
+                });
+            });
+        }
+
+        function updateCompareButton() {
+            const canCompare = selectedA && selectedB && selectedA !== selectedB;
+            btnCompare.disabled = !canCompare;
+            if (canCompare) {
+                compareHint.textContent = `将对比 #${selectedA} 与 #${selectedB}`;
+            } else if (!selectedA && !selectedB) {
+                compareHint.textContent = '请从上方列表选择两次执行';
+            } else if (!selectedA) {
+                compareHint.textContent = '请选择基准执行 (A)';
+            } else if (!selectedB) {
+                compareHint.textContent = '请选择对比执行 (B)';
+            } else {
+                compareHint.textContent = '不能对比同一次执行';
+            }
+        }
+
+        async function runComparison() {
+            if (!selectedA || !selectedB || selectedA === selectedB) return;
+
+            btnCompare.disabled = true;
+            btnCompare.innerHTML = '<i class="ri-loader-4-line spin"></i> 分析中...';
+
+            try {
+                const res = await fetch('/api/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id_a: selectedA, id_b: selectedB })
+                });
+
+                if (!res.ok) throw new Error('Comparison failed');
+
+                compareResult = await res.json();
+                renderResults(compareResult);
+                resultsSection.style.display = 'block';
+                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (err) {
+                showToast('对比失败: ' + err.message, 'error');
+            } finally {
+                btnCompare.disabled = false;
+                btnCompare.innerHTML = '<i class="ri-git-merge-line"></i> 开始对比分析';
+            }
+        }
+
+        function renderResults(data) {
+            const diff = data.diff;
+
+            // Overview
+            document.getElementById('steps-a').textContent = data.execution_a.steps;
+            document.getElementById('steps-b').textContent = data.execution_b.steps;
+            const stepsDelta = diff.steps_diff;
+            document.getElementById('steps-delta').textContent = (stepsDelta >= 0 ? '+' : '') + stepsDelta;
+            document.getElementById('steps-delta').className = 'val-delta ' + (stepsDelta > 0 ? 'delta-up' : (stepsDelta < 0 ? 'delta-down' : ''));
+
+            document.getElementById('mem-a').textContent = formatBytes(data.execution_a.peak_memory);
+            document.getElementById('mem-b').textContent = formatBytes(data.execution_b.peak_memory);
+            const memDelta = diff.memory_diff.peak_delta;
+            document.getElementById('mem-delta').textContent = (memDelta >= 0 ? '+' : '') + formatBytes(memDelta);
+            document.getElementById('mem-delta').className = 'val-delta ' + (memDelta > 0 ? 'delta-up' : (memDelta < 0 ? 'delta-down' : ''));
+
+            const sourceStatus = document.getElementById('source-status');
+            if (diff.source_changed) {
+                sourceStatus.innerHTML = '<span class="status-changed"><i class="ri-error-warning-line"></i> 源码已变更</span>';
+            } else {
+                sourceStatus.innerHTML = '<span class="status-same"><i class="ri-checkbox-circle-line"></i> 源码相同</span>';
+            }
+
+            document.getElementById('common-prefix').textContent = diff.execution_path_diff.common_prefix_len;
+
+            // Variables
+            renderVariablesDiff(diff.variable_changes);
+
+            // Coverage
+            renderCoverageDiff(diff.line_coverage, data.execution_a.source, data.execution_b.source);
+
+            // Path
+            renderPathAnalysis(diff.execution_path_diff);
+
+            // Memory
+            renderMemoryChart(data);
+        }
+
+        function renderVariablesDiff(changes) {
+            const container = document.getElementById('variables-diff');
+            if (changes.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="ri-checkbox-circle-line"></i> 两次执行的最终变量状态完全一致</div>';
+                return;
+            }
+
+            container.innerHTML = changes.map(c => `
+                <div class="diff-item">
+                    <div class="diff-var-name"><i class="ri-variable-line"></i> ${escapeHtml(c.name)}</div>
+                    <div class="diff-values">
+                        <div class="diff-val diff-val-a">
+                            <span class="val-label">A</span>
+                            <span class="val-content">${formatDiffValue(c.value_a)}</span>
+                        </div>
+                        <div class="diff-arrow"><i class="ri-arrow-right-line"></i></div>
+                        <div class="diff-val diff-val-b">
+                            <span class="val-label">B</span>
+                            <span class="val-content">${formatDiffValue(c.value_b)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderCoverageDiff(coverage, sourceA, sourceB) {
+            const containerA = document.getElementById('coverage-a');
+            const containerB = document.getElementById('coverage-b');
+
+            const onlyA = coverage.only_in_a;
+            const onlyB = coverage.only_in_b;
+            const common = coverage.common;
+
+            containerA.innerHTML = renderCoverageSide(sourceA, onlyA, common, 'a');
+            containerB.innerHTML = renderCoverageSide(sourceB, onlyB, common, 'b');
+        }
+
+        function renderCoverageSide(source, uniqueLines, commonLines, side) {
+            if (!source || source.length === 0) {
+                return '<div class="empty-state">无源码数据</div>';
+            }
+
+            return source.map((line, i) => {
+                const lineNo = i + 1;
+                const isUnique = uniqueLines.includes(lineNo);
+                const isCommon = commonLines.includes(lineNo);
+                let className = 'coverage-line';
+                if (isUnique) className += ' unique-' + side;
+                else if (isCommon) className += ' common';
+                else className += ' not-executed';
+
+                return `
+                    <div class="${className}">
+                        <span class="line-no">${lineNo}</span>
+                        <span class="line-code">${escapeHtml(line)}</span>
+                        ${isUnique ? `<span class="unique-badge">仅${side.toUpperCase()}</span>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderPathAnalysis(pathDiff) {
+            const container = document.getElementById('path-analysis');
+
+            let html = '';
+
+            // Divergence points
+            if (pathDiff.divergence_points.length > 0) {
+                html += '<div class="path-section"><h4><i class="ri-git-branch-line"></i> 分叉点</h4>';
+                pathDiff.divergence_points.forEach(dp => {
+                    html += `
+                        <div class="divergence-item">
+                            <span class="div-step">Step ${dp.step}</span>
+                            <div class="div-lines">
+                                <span class="div-line-a">A: Line ${dp.line_a}</span>
+                                <i class="ri-arrow-left-right-line"></i>
+                                <span class="div-line-b">B: Line ${dp.line_b}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            }
+
+            // Unique lines
+            if (pathDiff.unique_lines_a.length > 0 || pathDiff.unique_lines_b.length > 0) {
+                html += '<div class="path-section"><h4><i class="ri-list-check-2"></i> 独有执行行</h4>';
+                html += '<div class="unique-lines-container">';
+                html += `<div class="unique-side"><span class="badge-a">A</span> ${pathDiff.unique_lines_a.length > 0 ? pathDiff.unique_lines_a.join(', ') : '无'}</div>`;
+                html += `<div class="unique-side"><span class="badge-b">B</span> ${pathDiff.unique_lines_b.length > 0 ? pathDiff.unique_lines_b.join(', ') : '无'}</div>`;
+                html += '</div></div>';
+            }
+
+            // Summary
+            html += `
+                <div class="path-summary">
+                    <div class="summary-item">
+                        <span class="summary-label">A 总步数</span>
+                        <span class="summary-val">${pathDiff.total_steps_a}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">B 总步数</span>
+                        <span class="summary-val">${pathDiff.total_steps_b}</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">公共前缀</span>
+                        <span class="summary-val">${pathDiff.common_prefix_len} 步</span>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html || '<div class="empty-state">无路径差异数据</div>';
+        }
+
+        function renderMemoryChart(data) {
+            const ctx = document.getElementById('memory-compare-chart').getContext('2d');
+            const container = document.getElementById('memory-stats');
+
+            // Destroy existing chart if any
+            const existingChart = Chart.getChart(ctx);
+            if (existingChart) existingChart.destroy();
+
+            // Fetch full trace data for memory values
+            Promise.all([
+                fetch(`/api/history/${data.execution_a.id}`).then(r => r.json()),
+                fetch(`/api/history/${data.execution_b.id}`).then(r => r.json())
+            ]).then(([traceA, traceB]) => {
+                const memA = traceA.trace.map(s => s.memory / 1024);
+                const memB = traceB.trace.map(s => s.memory / 1024);
+
+                // Create labels
+                const maxLen = Math.max(memA.length, memB.length);
+                const labels = Array.from({ length: maxLen }, (_, i) => `Step ${i}`);
+
+                Chart.defaults.color = '#8b949e';
+                Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'A 基准执行',
+                                data: memA,
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                fill: true,
+                                tension: 0.3
+                            },
+                            {
+                                label: 'B 对比执行',
+                                data: memB,
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                fill: true,
+                                tension: 0.3
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                labels: { usePointStyle: true, padding: 20 }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(28, 28, 30, 0.95)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                                borderColor: 'rgba(255, 255, 255, 0.1)',
+                                borderWidth: 1,
+                                padding: 12,
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} KB`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { callback: (v) => v.toFixed(0) + ' KB' }
+                            },
+                            x: {
+                                display: true,
+                                grid: { display: false },
+                                ticks: { maxTicksLimit: 10 }
+                            }
+                        }
+                    }
+                });
+
+                // Memory stats
+                const avgA = memA.reduce((a, b) => a + b, 0) / memA.length;
+                const avgB = memB.reduce((a, b) => a + b, 0) / memB.length;
+                container.innerHTML = `
+                    <div class="mem-stat-card">
+                        <span class="mem-stat-label">A 平均内存</span>
+                        <span class="mem-stat-val">${avgA.toFixed(2)} KB</span>
+                    </div>
+                    <div class="mem-stat-card">
+                        <span class="mem-stat-label">B 平均内存</span>
+                        <span class="mem-stat-val">${avgB.toFixed(2)} KB</span>
+                    </div>
+                    <div class="mem-stat-card">
+                        <span class="mem-stat-label">平均差异</span>
+                        <span class="mem-stat-val ${avgB > avgA ? 'delta-up' : 'delta-down'}">${(avgB - avgA >= 0 ? '+' : '') + (avgB - avgA).toFixed(2)} KB</span>
+                    </div>
+                `;
+            });
+        }
+
+        // Helpers
+        function formatTime(ts) {
+            const d = new Date(ts * 1000);
+            return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            if (Math.abs(bytes) < 1024) return bytes.toFixed(0) + ' B';
+            return (bytes / 1024).toFixed(2) + ' KB';
+        }
+
+        function formatDiffValue(val) {
+            if (val === '<undefined>') return '<span class="undefined-val">undefined</span>';
+            if (typeof val === 'object') return JSON.stringify(val);
+            return escapeHtml(String(val));
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.className = 'toast ' + type;
+            toast.innerHTML = `<i class="ri-${type === 'error' ? 'error-warning' : 'checkbox-circle'}-fill"></i> ${msg}`;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+    
+    <!-- Onboarding for Compare -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('compare');
+        });
+    </script>
+</body>
+</html>

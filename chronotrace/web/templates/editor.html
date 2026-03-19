@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE - Pro Code Editor</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/pages/editor.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+
+    <div class="editor-layout">
+        <!-- Top Header -->
+        <header class="editor-header">
+            <div class="header-left">
+                <a href="/" class="back-btn">
+                    <i class="ri-dashboard-line"></i> 控制台
+                </a>
+                <div class="tab-container">
+                    <div class="file-tab">
+                        <i class="ri-python-fill" style="color: #3776ab;"></i>
+                        <span>main.py</span>
+                        <i class="ri-close-line" style="font-size: 14px; margin-left: 8px; opacity: 0.6; cursor: pointer;"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="action-group">
+                    <!-- Searchable Snippet Selector -->
+                    <div class="snippet-selector" id="snippet-selector">
+                        <div class="snippet-trigger" id="snippet-trigger">
+                            <i class="ri-book-2-line"></i>
+                            <span>算法库</span>
+                            <i class="ri-arrow-down-s-line"></i>
+                        </div>
+                        <div class="snippet-dropdown" id="snippet-dropdown">
+                            <div class="snippet-search">
+                                <i class="ri-search-line"></i>
+                                <input type="text" id="snippet-search-input" placeholder="搜索算法...">
+                            </div>
+                            <div class="snippet-list" id="snippet-list">
+                                <div class="snippet-group">
+                                    <div class="snippet-group-title">排序算法</div>
+                                    <div class="snippet-item" data-value="bubble">冒泡排序 (Bubble Sort)</div>
+                                    <div class="snippet-item" data-value="quick">快速排序 (Quick Sort)</div>
+                                    <div class="snippet-item" data-value="merge">归并排序 (Merge Sort)</div>
+                                    <div class="snippet-item" data-value="selection">选择排序 (Selection Sort)</div>
+                                    <div class="snippet-item" data-value="insertion">插入排序 (Insertion Sort)</div>
+                                    <div class="snippet-item" data-value="heap">堆排序 (Heap Sort)</div>
+                                    <div class="snippet-item" data-value="shell">希尔排序 (Shell Sort)</div>
+                                </div>
+                                <div class="snippet-group">
+                                    <div class="snippet-group-title">搜索算法</div>
+                                    <div class="snippet-item" data-value="binary">二分查找 (Binary Search)</div>
+                                    <div class="snippet-item" data-value="linear">线性查找 (Linear Search)</div>
+                                </div>
+                                <div class="snippet-group">
+                                    <div class="snippet-group-title">动态规划 & 递归</div>
+                                    <div class="snippet-item" data-value="fib">斐波那契 (Fibonacci)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="divider-vertical"></div>
+                    <button class="icon-btn" id="btn-undo" title="撤销 (Ctrl+Z)">
+                        <i class="ri-arrow-go-back-line"></i>
+                    </button>
+                    <button class="icon-btn" id="btn-redo" title="重做 (Ctrl+Y)">
+                        <i class="ri-arrow-go-forward-line"></i>
+                    </button>
+                    <div class="divider-vertical"></div>
+                    <button class="icon-btn" id="btn-format" title="格式化代码 (Shift+Alt+F)">
+                        <i class="ri-format-clear"></i>
+                    </button>
+                    <button class="icon-btn" id="btn-reset" title="重置代码">
+                        <i class="ri-refresh-line"></i>
+                    </button>
+                </div>
+                <div class="divider-vertical"></div>
+                <button class="action-btn primary glow-effect" id="btn-run">
+                    <i class="ri-play-fill"></i> <span>运行并追踪</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Editor Area -->
+        <div class="editor-main">
+            <!-- Sidebar (Activity Bar) -->
+            <aside class="editor-sidebar">
+                <div class="sidebar-top">
+                    <div class="sidebar-icon active" id="icon-explorer" title="资源管理器">
+                        <i class="ri-file-list-2-line"></i>
+                    </div>
+                </div>
+                <div class="sidebar-bottom">
+                    <div class="sidebar-icon" id="icon-settings" title="设置">
+                        <i class="ri-settings-4-line"></i>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Editor Instance -->
+            <div id="editor"># HUAYCODE 智能编辑器
+# ------------------------------
+# 尝试修改代码以查看详细的数组可视化！
+
+def analyze_data():
+    # 数组可视化演示
+    data = [5, 2, 9, 1, 5, 6]
+    print(f"原始数据: {data}")
+    
+    # 简单的冒泡排序来展示变化
+    n = len(data)
+    for i in range(n):
+        for j in range(0, n-i-1):
+            if data[j] > data[j+1]:
+                # 交换
+                data[j], data[j+1] = data[j+1], data[j]
+                
+    return data
+
+result = analyze_data()
+print(f"排序结果: {result}")
+</div>
+            
+            <!-- Loading Overlay -->
+            <div class="loading-overlay" id="loading-overlay">
+                <div class="loader-cyber"></div>
+                <div class="loading-text">正在初始化追踪协议...</div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <div class="status-group">
+                <div class="status-item status-bg-blue" id="status-remote" title="远程连接状态">
+                    <i class="ri-remote-control-line"></i> <span>WSL: Ubuntu</span>
+                </div>
+                <div class="status-item" id="status-branch" title="Git 分支">
+                    <i class="ri-git-branch-line"></i> <span>main*</span>
+                </div>
+                <div class="status-item" id="status-error" title="错误">
+                    <i class="ri-error-warning-line"></i> <span>0</span>
+                </div>
+                <div class="status-item" id="status-warning" title="警告">
+                    <i class="ri-alert-line"></i> <span>0</span>
+                </div>
+            </div>
+            <div class="status-group">
+                <div class="status-item" id="cursor-pos" title="光标位置">Ln 19, Col 34</div>
+                <div class="status-item" id="status-encoding" title="编码格式">UTF-8</div>
+                <div class="status-item" id="status-eol" title="换行符">LF</div>
+                <div class="status-item" id="status-lang" title="语言模式">Python 3.12</div>
+                <div class="status-item" id="status-notification" title="通知">
+                    <i class="ri-notification-3-line"></i>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/lib/ace/ace.min.js"></script>
+    <script src="/static/lib/ace/ext-language_tools.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            ace.require("ace/ext/language_tools");
+            const editor = ace.edit("editor");
+            
+            // Pro Configuration
+            editor.setTheme("ace/theme/one_dark");
+            editor.session.setMode("ace/mode/python");
+            
+            editor.setOptions({
+                enableBasicAutocompletion: true,
+                enableLiveAutocompletion: true,
+                enableSnippets: true,
+                fontSize: "14px",
+                fontFamily: "'Courier New', Courier, monospace",
+                showPrintMargin: false,
+                displayIndentGuides: true,
+                showLineNumbers: true,
+                showGutter: true,
+                tabSize: 4,
+                useSoftTabs: true,
+                scrollPastEnd: 0.5, // Allow scrolling past end
+                fixedWidthGutter: true,
+                highlightActiveLine: true,
+                highlightSelectedWord: true,
+                animatedScroll: true
+            });
+
+            // Restore code
+            const savedCode = localStorage.getItem('chronotrace_code');
+            if (savedCode) {
+                editor.setValue(savedCode, -1);
+            }
+
+            // Update Cursor Position
+            editor.selection.on('changeCursor', () => {
+                const pos = editor.getCursorPosition();
+                document.getElementById('cursor-pos').textContent = `Ln ${pos.row + 1}, Col ${pos.column + 1}`;
+            });
+
+            // Format Code
+            document.getElementById('btn-format').addEventListener('click', () => {
+                const pos = editor.getCursorPosition();
+                editor.selectAll();
+                editor.execCommand("indent");
+                editor.clearSelection();
+                editor.moveCursorToPosition(pos);
+                editor.focus();
+            });
+
+            // Undo / Redo
+            document.getElementById('btn-undo').addEventListener('click', () => {
+                editor.undo();
+                editor.focus();
+            });
+
+            document.getElementById('btn-redo').addEventListener('click', () => {
+                editor.redo();
+                editor.focus();
+            });
+
+            // Update undo/redo button states
+            function updateUndoRedoState() {
+                const undoBtn = document.getElementById('btn-undo');
+                const redoBtn = document.getElementById('btn-redo');
+                const undoManager = editor.session.getUndoManager();
+                
+                if (undoManager.hasUndo()) {
+                    undoBtn.classList.remove('disabled');
+                } else {
+                    undoBtn.classList.add('disabled');
+                }
+                
+                if (undoManager.hasRedo()) {
+                    redoBtn.classList.remove('disabled');
+                } else {
+                    redoBtn.classList.add('disabled');
+                }
+            }
+
+            editor.session.on('change', updateUndoRedoState);
+            updateUndoRedoState();
+
+            // Searchable Snippets Logic
+            const snippets = {
+                'bubble': `def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr\n\ndata = [64, 34, 25, 12, 22, 11, 90]\nbubble_sort(data)`,
+                'quick': `def quick_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[len(arr) // 2]\n    left = [x for x in arr if x < pivot]\n    middle = [x for x in arr if x == pivot]\n    right = [x for x in arr if x > pivot]\n    return quick_sort(left) + middle + quick_sort(right)\n\ndata = [3,6,8,10,1,2,1]\nprint(quick_sort(data))`,
+                'merge': `def merge_sort(arr):\n    if len(arr) > 1:\n        mid = len(arr)//2\n        L = arr[:mid]\n        R = arr[mid:]\n        merge_sort(L)\n        merge_sort(R)\n        i = j = k = 0\n        while i < len(L) and j < len(R):\n            if L[i] < R[j]:\n                arr[k] = L[i]\n                i += 1\n            else:\n                arr[k] = R[j]\n                j += 1\n            k += 1\n        while i < len(L):\n            arr[k] = L[i]\n            i += 1\n            k += 1\n        while j < len(R):\n            arr[k] = R[j]\n            j += 1\n            k += 1\n\ndata = [12, 11, 13, 5, 6, 7]\nmerge_sort(data)\nprint(data)`,
+                'selection': `def selection_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        min_idx = i\n        for j in range(i+1, n):\n            if arr[j] < arr[min_idx]:\n                min_idx = j\n        arr[i], arr[min_idx] = arr[min_idx], arr[i]\n    return arr\n\ndata = [64, 25, 12, 22, 11]\nselection_sort(data)\nprint(data)`,
+                'insertion': `def insertion_sort(arr):\n    for i in range(1, len(arr)):\n        key = arr[i]\n        j = i-1\n        while j >= 0 and key < arr[j]:\n            arr[j+1] = arr[j]\n            j -= 1\n        arr[j+1] = key\n    return arr\n\ndata = [12, 11, 13, 5, 6]\ninsertion_sort(data)\nprint(data)`,
+                'heap': `def heapify(arr, n, i):\n    largest = i\n    l = 2 * i + 1\n    r = 2 * i + 2\n    if l < n and arr[i] < arr[l]:\n        largest = l\n    if r < n and arr[largest] < arr[r]:\n        largest = r\n    if largest != i:\n        arr[i], arr[largest] = arr[largest], arr[i]\n        heapify(arr, n, largest)\n\ndef heap_sort(arr):\n    n = len(arr)\n    for i in range(n // 2 - 1, -1, -1):\n        heapify(arr, n, i)\n    for i in range(n-1, 0, -1):\n        arr[i], arr[0] = arr[0], arr[i]\n        heapify(arr, i, 0)\n    return arr\n\ndata = [12, 11, 13, 5, 6, 7]\nheap_sort(data)\nprint(data)`,
+                'shell': `def shell_sort(arr):\n    n = len(arr)\n    gap = n // 2\n    while gap > 0:\n        for i in range(gap, n):\n            temp = arr[i]\n            j = i\n            while j >= gap and arr[j-gap] > temp:\n                arr[j] = arr[j-gap]\n                j -= gap\n            arr[j] = temp\n        gap //= 2\n    return arr\n\ndata = [12, 34, 54, 2, 3]\nshell_sort(data)\nprint(data)`,
+                'binary': `def binary_search(arr, x):\n    low = 0\n    high = len(arr) - 1\n    mid = 0\n    while low <= high:\n        mid = (high + low) // 2\n        if arr[mid] < x:\n            low = mid + 1\n        elif arr[mid] > x:\n            high = mid - 1\n        else:\n            return mid\n    return -1\n\narr = [2, 3, 4, 10, 40]\nx = 10\nresult = binary_search(arr, x)\nprint(f"Element is present at index {result}")`,
+                'linear': `def linear_search(arr, x):\n    for i in range(len(arr)):\n        if arr[i] == x:\n            return i\n    return -1\n\narr = [10, 20, 80, 30, 60, 50, 110, 100, 130, 170]\nx = 110\nresult = linear_search(arr, x)\nprint(f"Element is present at index {result}")`,
+                'fib': `def fibonacci(n):\n    if n <= 0:\n        return []\n    elif n == 1:\n        return [0]\n    sequence = [0, 1]\n    while len(sequence) < n:\n        next_val = sequence[-1] + sequence[-2]\n        sequence.append(next_val)\n    return sequence\n\nprint(fibonacci(10))`
+            };
+
+            // Snippet selector dropdown
+            const snippetSelector = document.getElementById('snippet-selector');
+            const snippetTrigger = document.getElementById('snippet-trigger');
+            const snippetDropdown = document.getElementById('snippet-dropdown');
+            const snippetSearchInput = document.getElementById('snippet-search-input');
+            const snippetList = document.getElementById('snippet-list');
+
+            // Toggle dropdown
+            snippetTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                snippetDropdown.classList.toggle('open');
+                if (snippetDropdown.classList.contains('open')) {
+                    snippetSearchInput.focus();
+                }
+            });
+
+            // Close on outside click
+            document.addEventListener('click', () => {
+                snippetDropdown.classList.remove('open');
+            });
+
+            snippetDropdown.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+
+            // Search functionality
+            snippetSearchInput.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const items = snippetList.querySelectorAll('.snippet-item');
+                
+                items.forEach(item => {
+                    const text = item.textContent.toLowerCase();
+                    if (text.includes(query)) {
+                        item.classList.remove('hidden');
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                });
+
+                // Hide empty groups
+                const groups = snippetList.querySelectorAll('.snippet-group');
+                groups.forEach(group => {
+                    const visibleItems = group.querySelectorAll('.snippet-item:not(.hidden)');
+                    group.style.display = visibleItems.length === 0 ? 'none' : 'block';
+                });
+            });
+
+            // Select snippet
+            snippetList.addEventListener('click', (e) => {
+                const item = e.target.closest('.snippet-item');
+                if (item) {
+                    const val = item.dataset.value;
+                    if (snippets[val]) {
+                        if (confirm('这将覆盖当前代码，确定吗？')) {
+                            editor.setValue(snippets[val], -1);
+                            editor.focus();
+                        }
+                    }
+                    snippetDropdown.classList.remove('open');
+                    snippetSearchInput.value = '';
+                    // Reset visibility
+                    snippetList.querySelectorAll('.snippet-item').forEach(i => i.classList.remove('hidden'));
+                    snippetList.querySelectorAll('.snippet-group').forEach(g => g.style.display = 'block');
+                }
+            });
+
+            // Keyboard Shortcuts
+            editor.commands.addCommand({
+                name: 'runCode',
+                bindKey: {win: 'Ctrl-Enter', mac: 'Command-Enter'},
+                exec: function(editor) {
+                    document.getElementById('btn-run').click();
+                }
+            });
+
+            // Run Logic
+            const btnRun = document.getElementById('btn-run');
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            btnRun.addEventListener('click', () => {
+                const code = editor.getValue();
+                if (!code.trim()) return;
+
+                loadingOverlay.classList.add('active');
+                localStorage.setItem('chronotrace_code', code);
+
+                fetch('/api/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                })
+                .then(async response => {
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.error || 'Execution failed');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    window.location.href = '/';
+                })
+                .catch(err => {
+                    console.error(err);
+                    const toast = document.createElement('div');
+                    toast.className = 'toast-error';
+                    toast.innerHTML = `<i class="ri-error-warning-fill"></i> <span>运行失败: ${err.message}</span>`;
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 4000);
+                    loadingOverlay.classList.remove('active');
+                });
+            });
+            
+            // Simple Reset
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                 if(confirm('重置为默认示例代码?')) {
+                     editor.setValue(`# HUAYCODE 智能编辑器\n# ------------------------------\n# 尝试修改代码以查看详细的数组可视化！\n\ndef analyze_data():\n    # 数组可视化演示\n    data = [5, 2, 9, 1, 5, 6]\n    print(f"原始数据: {data}")\n    \n    # 简单的冒泡排序来展示变化\n    n = len(data)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if data[j] > data[j+1]:\n                # 交换\n                data[j], data[j+1] = data[j+1], data[j]\n                \n    return data\n\nresult = analyze_data()\nprint(f"排序结果: {result}")`, -1);
+                 }
+            });
+            
+            // Resize
+            window.addEventListener('resize', () => editor.resize());
+
+            // Sidebar Interactivity
+            const sidebarIcons = document.querySelectorAll('.sidebar-icon');
+            sidebarIcons.forEach(icon => {
+                icon.addEventListener('click', () => {
+                    // Toggle active state
+                    sidebarIcons.forEach(i => i.classList.remove('active'));
+                    icon.classList.add('active');
+                });
+            });
+
+            // Status Bar Interactivity
+            const statusItems = {
+                'status-remote': '已连接到 WSL: Ubuntu 环境',
+                'status-branch': '当前分支: main',
+                'status-error': '无错误',
+                'status-warning': '无警告',
+                'status-encoding': '文件编码: UTF-8',
+                'status-eol': '换行符: LF (Unix)',
+                'status-lang': '当前语言: Python 3.12',
+                'status-notification': '无新通知'
+            };
+
+            // Fetch dynamic status if possible
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.env) {
+                        const el = document.querySelector('#status-remote span');
+                        if (el) el.textContent = data.env;
+                    }
+                    if (data.branch) {
+                        const el = document.querySelector('#status-branch span');
+                        if (el) el.textContent = data.branch + '*';
+                    }
+                })
+                .catch(() => {});
+
+            for (const [id, msg] of Object.entries(statusItems)) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('click', () => {
+                        // Simple flash effect or toast
+                        const toast = document.createElement('div');
+                        toast.className = 'status-toast';
+                        toast.textContent = msg;
+                        document.body.appendChild(toast);
+                        
+                        // Position near the element
+                        const rect = el.getBoundingClientRect();
+                        toast.style.left = rect.left + 'px';
+                        toast.style.bottom = '30px';
+                        
+                        setTimeout(() => toast.remove(), 2000);
+                    });
+                }
+            }
+        });
+
+        // Global Ctrl+Enter shortcut (works even if editor not focused)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('btn-run').click();
+            }
+        });
+    </script>
+    
+    <!-- Onboarding for Editor -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('editor');
+        });
+    </script>
+</body>
+</html>

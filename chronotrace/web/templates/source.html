@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChronoTrace - Source View</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link href="/static/css/prism-tomorrow.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/pages/source.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+
+    <div class="source-container">
+        <header class="source-header">
+            <div class="file-info">
+                <div class="file-icon"><i class="ri-file-code-line"></i></div>
+                <div class="file-details">
+                    <h2>source_code.py</h2>
+                    <span>项目根目录 / 主执行追踪</span>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn" id="btn-copy">
+                    <i class="ri-file-copy-line"></i> 复制源码
+                </button>
+                <a href="/" class="btn btn-primary">
+                    <i class="ri-dashboard-line"></i> 返回控制台
+                </a>
+            </div>
+        </header>
+
+        <div class="source-content">
+            <div class="line-numbers-sidebar" id="line-numbers">
+                <!-- Populated by JS -->
+            </div>
+            <div class="code-area" id="code-scroll-area">
+                <pre><code class="language-python" id="code-display">加载中...</code></pre>
+            </div>
+            <div class="minimap" id="minimap">
+                <!-- Canvas for minimap -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/lib/prism.min.js"></script>
+    <script src="/static/lib/prism-python.min.js"></script>
+    <script>
+        function renderSource(lines, startLine) {
+            const codeEl = document.getElementById('code-display');
+            const lineNumsEl = document.getElementById('line-numbers');
+            
+            // Get hit counts from trace data (need to store it globally or pass it)
+            // Since this function is called inside fetch, we can access 'data' variable if we refactor or just count here
+            // We need to re-fetch or pass data. Let's modify the fetch logic above.
+        }
+
+        // Modified fetch logic to pass trace data
+        document.addEventListener('DOMContentLoaded', () => {
+            const codeScrollArea = document.getElementById('code-scroll-area');
+            const lineNumbersSidebar = document.getElementById('line-numbers');
+
+            // Sync Scroll
+            codeScrollArea.addEventListener('scroll', () => {
+                lineNumbersSidebar.scrollTop = codeScrollArea.scrollTop;
+            });
+
+            fetch('/api/trace')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.source) {
+                        // Calculate hits
+                        const hits = {};
+                        if (data.trace) {
+                            data.trace.forEach(step => {
+                                const ln = step.line_no;
+                                hits[ln] = (hits[ln] || 0) + 1;
+                            });
+                        }
+                        renderSource(data.source, data.start_line, hits);
+                    }
+                });
+            
+            // Copy Logic
+            document.getElementById('btn-copy').addEventListener('click', function() {
+                const code = document.getElementById('code-display').textContent;
+                navigator.clipboard.writeText(code).then(() => {
+                    const original = this.innerHTML;
+                    this.innerHTML = '<i class="ri-check-line"></i> 已复制';
+                    setTimeout(() => {
+                        this.innerHTML = original;
+                    }, 2000);
+                });
+            });
+        });
+
+        function renderSource(lines, startLine, hits) {
+            const codeEl = document.getElementById('code-display');
+            const lineNumsEl = document.getElementById('line-numbers');
+            
+            // Render Code
+            codeEl.textContent = lines.join('');
+            Prism.highlightElement(codeEl);
+
+            // Render Line Numbers with Heatmap
+            lineNumsEl.innerHTML = '';
+            lines.forEach((_, i) => {
+                const lineNo = startLine + i;
+                const count = hits[lineNo] || 0;
+                
+                const div = document.createElement('div');
+                div.className = 'line-num-row';
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.paddingRight = '8px';
+                
+                const numSpan = document.createElement('span');
+                numSpan.textContent = lineNo;
+                
+                div.appendChild(numSpan);
+                
+                if (count > 0) {
+                    const hitSpan = document.createElement('span');
+                    hitSpan.textContent = `${count}x`;
+                    hitSpan.style.fontSize = '10px';
+                    hitSpan.style.color = 'rgba(16, 185, 129, 0.8)'; // Green
+                    hitSpan.style.marginLeft = '8px';
+                    div.appendChild(hitSpan);
+                    
+                    // Highlight background of line number
+                    const intensity = Math.min(count / 10, 1);
+                    div.style.backgroundColor = `rgba(16, 185, 129, ${intensity * 0.2})`;
+                }
+                
+                lineNumsEl.appendChild(div);
+            });
+            
+            // Generate Minimap
+            generateMinimap(lines);
+        }
+        
+        function generateMinimap(lines) {
+            const minimap = document.getElementById('minimap');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Basic config
+            const lineHeight = 2;
+            const width = 100;
+            canvas.width = width;
+            canvas.height = lines.length * lineHeight * 1.5; // Scale
+            
+            ctx.fillStyle = '#64748b';
+            
+            lines.forEach((line, i) => {
+                const len = Math.min(line.trim().length, 30); // Visualize line length
+                if (len > 0) {
+                    const indent = line.search(/\S|$/) * 2;
+                    ctx.fillRect(indent, i * lineHeight * 1.5, len * 2, lineHeight);
+                }
+            });
+            
+            minimap.innerHTML = '';
+            minimap.appendChild(canvas);
+        }
+    </script>
+    
+    <!-- Onboarding for Source -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('source');
+        });
+    </script>
+</body>
+</html>

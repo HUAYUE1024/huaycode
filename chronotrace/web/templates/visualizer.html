@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE - 算法可视化引擎</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link href="/static/css/prism-tomorrow.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/pages/dashboard.css">
+    <link rel="stylesheet" href="/static/css/visualizer.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+
+    <div class="dashboard-layout">
+        <div class="workspace-split">
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('open')">
+                <i class="ri-menu-line"></i>
+            </button>
+            <!-- Sidebar (复用 dashboard 样式) -->
+            <nav class="sidebar-nav">
+                <div class="brand">
+                    <div class="brand-logo">
+                        <i class="ri-code-s-slash-line"></i>
+                    </div>
+                    <div class="brand-text">
+                        <h1>HUAYCODE</h1>
+                        <span>Pro Visualizer</span>
+                    </div>
+                </div>
+                
+                <div class="nav-list">
+                    <a href="/" class="nav-link">
+                        <i class="ri-dashboard-line"></i> 控制台
+                    </a>
+                    <a href="/editor" class="nav-link">
+                        <i class="ri-code-box-line"></i> 代码编辑
+                    </a>
+                    <a href="/source" class="nav-link">
+                        <i class="ri-file-code-line"></i> 源码概览
+                    </a>
+                    <a href="/memory" class="nav-link">
+                        <i class="ri-cpu-line"></i> 内存分析
+                    </a>
+                    <a href="/visualizer" class="nav-link active">
+                        <i class="ri-bar-chart-grouped-line"></i> 算法可视化
+                    </a>
+                    <a href="/compare" class="nav-link">
+                        <i class="ri-git-merge-line"></i> 执行对比
+                    </a>
+                    <a href="/settings" class="nav-link">
+                        <i class="ri-settings-4-line"></i> 系统设置
+                    </a>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">状态</span>
+                        <span class="status-val" style="color: var(--accent-success)">Ready</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">引擎</span>
+                        <span class="status-val">V-Engine 2.0</span>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="content-area">
+                <!-- Top Toolbar -->
+                <header class="top-toolbar">
+                    <div class="playback-group">
+                        <button class="play-btn" onclick="stepPrev()" id="btn-prev" title="上一步">
+                            <i class="ri-arrow-left-s-line"></i>
+                        </button>
+                        <button class="play-btn main-play" onclick="togglePlay()" id="btn-play" title="播放/暂停">
+                            <i class="ri-play-fill"></i>
+                        </button>
+                        <button class="play-btn" onclick="stepNext()" id="btn-next" title="下一步">
+                            <i class="ri-arrow-right-s-line"></i>
+                        </button>
+                    </div>
+
+                    <div class="timeline-wrapper">
+                        <div class="timeline-info">
+                            <span>执行进度</span>
+                            <span>Step <span id="current-step">0</span> / <span id="total-steps">0</span></span>
+                        </div>
+                        <input type="range" class="timeline-track" id="timeline" min="0" max="0" value="0" oninput="scrub(this.value)">
+                    </div>
+
+                    <div class="speed-control">
+                        <i class="ri-speed-line" style="color: var(--text-tertiary); margin-right: 8px;"></i>
+                        <input type="range" id="speed-slider" min="100" max="2000" value="800" class="timeline-track" style="width: 100px;">
+                    </div>
+                </header>
+
+                <!-- Visualization Workspace -->
+                <div class="viz-workspace">
+                    
+                    <!-- Left: Code Panel (Narrower) -->
+                    <div class="viz-code-panel">
+                        <div class="panel-header">
+                            <span><i class="ri-file-code-line"></i> 源码追踪</span>
+                        </div>
+                        <div class="code-content" id="code-container">
+                            <!-- Code injected here -->
+                            <div class="empty-state">等待数据加载...</div>
+                        </div>
+                        
+                        <!-- Console Output Section -->
+                        <div class="panel-header" style="border-top: 1px solid var(--border-color);">
+                            <span><i class="ri-terminal-line"></i> 控制台输出</span>
+                        </div>
+                        <div class="console-output" id="console-output">
+                            <!-- Output injected here -->
+                        </div>
+                    </div>
+
+                    <!-- Right: Stage (Wider) -->
+                    <div class="viz-stage-panel">
+                        <!-- Stats Overlay -->
+                        <div class="stats-overlay">
+                            <div class="stat-item">
+                                <span class="stat-label">比较次数</span>
+                                <span class="stat-val" id="stat-comparisons">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">交换次数</span>
+                                <span class="stat-val" id="stat-swaps">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">数组访问</span>
+                                <span class="stat-val" id="stat-accesses">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Visualization Area -->
+                        <div class="stage-container">
+                            <div class="stage-header">
+                                <div class="stage-title">
+                                    <i class="ri-movie-line"></i> 动态演示
+                                    <span class="target-var-badge" id="target-var-display" style="display:none;">VAR: data</span>
+                                </div>
+                                <div class="stage-actions">
+                                    <button class="btn-sm" id="btn-heatmap" onclick="toggleHeatmap()">
+                                        <i class="ri-fire-line"></i> 热力图
+                                    </button>
+                                    <button class="btn-sm" id="btn-sound" onclick="toggleSound()">
+                                        <i class="ri-volume-up-line"></i> 音效
+                                    </button>
+                                    <button class="btn-sm" onclick="openVarModal()"><i class="ri-list-settings-line"></i> 选择变量</button>
+                                </div>
+                            </div>
+                            
+                            <div id="viz-canvas" class="viz-canvas">
+                                <!-- Bars go here -->
+                                <div class="placeholder-text">
+                                    <i class="ri-bubble-chart-line" style="font-size: 48px; display: block; margin-bottom: 16px; opacity: 0.5;"></i>
+                                    请运行代码并选择数组变量开始可视化
+                                </div>
+                            </div>
+
+                            <!-- Log / Insight Overlay -->
+                            <div class="viz-insight-bar" id="insight-bar">
+                                <i class="ri-information-line"></i>
+                                <span id="insight-text">准备就绪</span>
+                            </div>
+                        </div>
+
+                        <!-- Bottom: Variable Inspector (Mini) -->
+                        <div class="inspector-mini">
+                            <div class="panel-header" style="background: transparent; border-bottom: 1px solid var(--border-color);">
+                                <span><i class="ri-cpu-line"></i> 局部变量 & 指针状态</span>
+                            </div>
+                            <div class="inspector-content" id="inspector-list">
+                                <!-- Variables -->
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="var-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="ri-database-2-line"></i> 选择可视化目标</h3>
+                <button onclick="closeVarModal()" class="close-btn"><i class="ri-close-line"></i></button>
+            </div>
+            <div class="modal-body">
+                <p>系统检测到以下列表变量，请选择一个进行可视化演示：</p>
+                <div class="var-options" id="var-options-container">
+                    <!-- Options -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="confirmVarSelection()">开始演示</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logic Script -->
+    <script>
+        // --- State ---
+        let traceData = [];
+        let sourceLines = [];
+        let outputData = [];
+        let currentStep = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        let targetVar = null;
+        let detectedArrays = [];
+        
+        // Features State
+        let isHeatmapEnabled = false;
+        let isSoundEnabled = false;
+        let audioCtx = null;
+        let stats = { comparisons: 0, swaps: 0, accesses: 0 };
+        let accessCounts = []; // For heatmap
+
+        // Pointer Colors for beginners
+        const POINTER_COLORS = {
+            'i': '#ef4444', // Red
+            'j': '#f59e0b', // Amber
+            'k': '#10b981', // Emerald
+            'mid': '#8b5cf6', // Violet
+            'left': '#3b82f6', // Blue
+            'right': '#ec4899' // Pink
+        };
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchTraceData();
+        });
+
+        // --- Sound System ---
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playTone(freq, type='sine', duration=0.1) {
+            if (!isSoundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function toggleSound() {
+            isSoundEnabled = !isSoundEnabled;
+            const btn = document.getElementById('btn-sound');
+            if (isSoundEnabled) {
+                initAudio();
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="ri-volume-up-line"></i> 音效: 开';
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="ri-volume-mute-line"></i> 音效: 关';
+            }
+        }
+
+        // --- Heatmap System ---
+        function toggleHeatmap() {
+            isHeatmapEnabled = !isHeatmapEnabled;
+            const btn = document.getElementById('btn-heatmap');
+            if (isHeatmapEnabled) {
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="ri-fire-fill"></i> 热力图: 开';
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="ri-fire-line"></i> 热力图: 关';
+            }
+            // Re-render current frame
+            updateFrame(currentStep);
+        }
+
+        // --- Data Fetching ---
+        async function fetchTraceData() {
+            try {
+                const res = await fetch('/api/trace');
+                const data = await res.json();
+                
+                if (data && data.trace && data.trace.length > 0) {
+                    traceData = data.trace;
+                    if (data.source) {
+                        sourceLines = data.source;
+                        renderCode();
+                    }
+                    if (data.output) {
+                        outputData = data.output;
+                    }
+                    
+                    document.getElementById('total-steps').innerText = traceData.length - 1;
+                    document.getElementById('timeline').max = traceData.length - 1;
+
+                    // Auto-detect
+                    detectArrays();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- Code Rendering ---
+        function renderCode() {
+            const container = document.getElementById('code-container');
+            container.innerHTML = sourceLines.map((line, i) => `
+                <div class="code-line" id="line-${i+1}">
+                    <span class="ln">${i+1}</span>
+                    <span class="lc">${escapeHtml(line)}</span>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // --- Array Detection ---
+        function detectArrays() {
+            const candidates = new Set();
+            // Scan random sample of steps to find lists
+            const stepsToScan = [0, Math.floor(traceData.length/2), traceData.length-1];
+            
+            traceData.forEach(step => {
+                if(!step.locals) return;
+                for (const [k, v] of Object.entries(step.locals)) {
+                    if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'number') {
+                        candidates.add(k);
+                    }
+                }
+            });
+
+            detectedArrays = Array.from(candidates);
+            
+            if (detectedArrays.length > 0) {
+                renderVarOptions();
+                // Auto-select first if only one
+                if (detectedArrays.length === 1) {
+                    targetVar = detectedArrays[0];
+                    updateUI();
+                    initViz();
+                } else {
+                    openVarModal();
+                }
+            }
+        }
+
+        function renderVarOptions() {
+            const container = document.getElementById('var-options-container');
+            container.innerHTML = detectedArrays.map(v => `
+                <label class="var-option">
+                    <input type="radio" name="targetVar" value="${v}" ${v === targetVar ? 'checked' : ''}>
+                    <span class="var-box">
+                        <span class="name">${v}</span>
+                        <span class="type">List[int]</span>
+                    </span>
+                </label>
+            `).join('');
+        }
+
+        function openVarModal() {
+            document.getElementById('var-modal').classList.remove('hidden');
+            renderVarOptions();
+        }
+
+        function closeVarModal() {
+            document.getElementById('var-modal').classList.add('hidden');
+        }
+
+        function confirmVarSelection() {
+            const selected = document.querySelector('input[name="targetVar"]:checked');
+            if (selected) {
+                targetVar = selected.value;
+                updateUI();
+                initViz();
+                closeVarModal();
+            }
+        }
+
+        function updateUI() {
+            if(targetVar) {
+                const badge = document.getElementById('target-var-display');
+                badge.style.display = 'inline-block';
+                badge.innerText = `VAR: ${targetVar}`;
+            }
+        }
+
+        function initViz() {
+            updateFrame(0);
+        }
+
+        // --- Core Logic ---
+        function updateFrame(idx) {
+            if (idx < 0 || idx >= traceData.length) return;
+            
+            // Calculate Stats up to this point
+            calculateStats(idx);
+            
+            currentStep = parseInt(idx);
+            const step = traceData[currentStep];
+
+            // Update Controls
+            document.getElementById('current-step').innerText = currentStep;
+            document.getElementById('timeline').value = currentStep;
+
+            // Highlight Code
+            document.querySelectorAll('.code-line').forEach(el => el.classList.remove('active'));
+            const activeLine = document.getElementById(`line-${step.line_no}`);
+            if (activeLine) {
+                activeLine.classList.add('active');
+                activeLine.scrollIntoView({block: 'center', behavior: 'smooth'});
+            }
+
+            // Render Inspector
+            renderInspector(step.locals);
+
+            // Render Console Output
+            renderConsole(step.timestamp);
+
+            // Render Visualizer
+            if (targetVar && step.locals && step.locals[targetVar]) {
+                const arr = step.locals[targetVar];
+                const meta = inferAction(currentStep, arr, step.locals);
+                
+                // Play Sound with pitch variation
+                if (meta.type === 'swap') {
+                    // Pitch based on value being swapped (higher val = higher pitch)
+                    const val = arr[meta.indices[0]] || 10;
+                    playTone(200 + val * 5, 'square', 0.05);
+                }
+                if (meta.type === 'compare') {
+                    playTone(400, 'sine', 0.03);
+                }
+                if (meta.type === 'update') {
+                    playTone(300, 'triangle', 0.05);
+                }
+                
+                renderCanvas(arr, meta, step.locals);
+                
+                // Update Insight
+                const insightBar = document.getElementById('insight-bar');
+                const insightText = document.getElementById('insight-text');
+                
+                if (meta.desc) {
+                    insightText.innerHTML = meta.desc; // Allow HTML in desc
+                    insightBar.classList.add('active');
+                } else {
+                    insightText.innerText = `Line ${step.line_no}: 执行中...`;
+                    insightBar.classList.remove('active');
+                }
+            }
+        }
+
+        function calculateStats(targetIdx) {
+            // Reset
+            stats = { comparisons: 0, swaps: 0, accesses: 0 };
+            accessCounts = []; 
+            if (targetVar && traceData[0].locals[targetVar]) {
+                accessCounts = new Array(traceData[0].locals[targetVar].length).fill(0);
+            }
+
+            // Iterate from 0 to targetIdx to build stats
+            for (let i = 1; i <= targetIdx; i++) {
+                if (!traceData[i].locals[targetVar]) continue;
+                
+                const currentArr = traceData[i].locals[targetVar];
+                const prevArr = traceData[i-1].locals[targetVar];
+                if (!prevArr) continue;
+                
+                // Track ALL array accesses by comparing values between steps
+                const changed = [];
+                for (let j = 0; j < currentArr.length; j++) {
+                    if (j < prevArr.length && currentArr[j] !== prevArr[j]) {
+                        changed.push(j);
+                        // Count each changed index as an access
+                        if (accessCounts[j] !== undefined) accessCounts[j]++;
+                        stats.accesses++;
+                    }
+                }
+                
+                // Detect swap (exactly 2 values exchanged)
+                if (changed.length === 2 &&
+                    currentArr[changed[0]] === prevArr[changed[1]] && 
+                    currentArr[changed[1]] === prevArr[changed[0]]) {
+                    stats.swaps++;
+                } else if (changed.length > 0) {
+                    stats.comparisons++;
+                }
+            }
+            
+            // Update UI
+            animateNum('stat-comparisons', stats.comparisons);
+            animateNum('stat-swaps', stats.swaps);
+            animateNum('stat-accesses', stats.accesses);
+        }
+        
+        function animateNum(id, val) {
+            const el = document.getElementById(id);
+            // Simple update for now to avoid jitter, could be tweened
+            el.innerText = val;
+        }
+
+        function renderConsole(currentTimestamp) {
+            const container = document.getElementById('console-output');
+            // Filter logs up to current timestamp
+            const logs = outputData.filter(log => log.timestamp <= currentTimestamp);
+            
+            container.innerHTML = logs.map(log => `
+                <div class="log-line">
+                    <span class="log-time">[LOG]</span>
+                    <span class="log-msg">${escapeHtml(log.content)}</span>
+                </div>
+            `).join('');
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function renderInspector(locals) {
+            const container = document.getElementById('inspector-list');
+            container.innerHTML = '';
+            
+            for (const [k, v] of Object.entries(locals)) {
+                if (k.startsWith('__') || k === targetVar) continue;
+                
+                let displayVal = JSON.stringify(v);
+                let isIndex = Number.isInteger(v);
+                
+                // Determine color for index variables
+                let style = "";
+                if (POINTER_COLORS[k]) {
+                    style = `border-left: 3px solid ${POINTER_COLORS[k]}; padding-left: 6px;`;
+                }
+
+                container.innerHTML += `
+                    <div class="mini-var-item" style="${style}">
+                        <span class="m-name" style="${POINTER_COLORS[k] ? 'color:'+POINTER_COLORS[k] : ''}">${k}</span>
+                        <span class="m-val ${isIndex ? 'is-index' : ''}">${displayVal}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function inferAction(idx, currentArr, locals) {
+            if (idx === 0) return { type: 'init', desc: '初始化数组' };
+            
+            const prevStep = traceData[idx - 1];
+            if (!prevStep.locals[targetVar]) return { type: 'step' };
+            
+            const prevArr = prevStep.locals[targetVar];
+            
+            // 1. Swap Detection
+            const diffs = [];
+            for(let i=0; i<currentArr.length; i++) {
+                if (currentArr[i] !== prevArr[i]) diffs.push(i);
+            }
+            
+            if (diffs.length === 2 && 
+                currentArr[diffs[0]] === prevArr[diffs[1]] && 
+                currentArr[diffs[1]] === prevArr[diffs[0]]) {
+                return {
+                    type: 'swap',
+                    indices: diffs,
+                    desc: `交换元素: [${diffs[0]}] ↔ [${diffs[1]}]`
+                };
+            }
+            
+            if (diffs.length > 0) {
+                return { type: 'update', indices: diffs, desc: `更新索引 ${diffs.join(', ')} 的值` };
+            }
+
+            // 2. Comparison Detection (Heuristic)
+            const lineCode = sourceLines[traceData[idx].line_no - 1] || "";
+            if (lineCode.includes(targetVar) && (lineCode.includes('>') || lineCode.includes('<') || lineCode.includes('=='))) {
+                const indices = [];
+                for (const [k, v] of Object.entries(locals)) {
+                    if (Number.isInteger(v) && v >= 0 && v < currentArr.length) {
+                        if (lineCode.includes(`[${k}]`) || lineCode.includes(k)) {
+                            indices.push(v);
+                        }
+                    }
+                }
+                
+                if (indices.length >= 2) {
+                     const uniqueIndices = [...new Set(indices)].slice(0, 2);
+                     return {
+                         type: 'compare',
+                         indices: uniqueIndices,
+                         desc: `比较元素: ${currentArr[uniqueIndices[0]]} vs ${currentArr[uniqueIndices[1]]}`
+                     };
+                }
+            }
+
+            return { type: 'step', desc: null };
+        }
+
+        // --- Improved Canvas Rendering with Reconciliation ---
+        function renderCanvas(arr, meta, locals) {
+            const canvas = document.getElementById('viz-canvas');
+            
+            const maxVal = Math.max(...arr, 10);
+            const heightFactor = 200 / maxVal; // Max height 200px
+            
+            // Check if we need to full rebuild (size change)
+            const currentWrappers = canvas.querySelectorAll('.bar-wrapper');
+            if (currentWrappers.length !== arr.length) {
+                canvas.innerHTML = ''; // Full rebuild
+                arr.forEach((val, i) => {
+                     createBarElement(canvas, i, val, heightFactor);
+                });
+            }
+            
+            // Update existing elements
+            arr.forEach((val, i) => {
+                const wrapper = canvas.children[i];
+                if (!wrapper) return; // Should not happen
+                
+                const bar = wrapper.querySelector('.viz-bar');
+                const valLabel = wrapper.querySelector('.bar-val');
+                const pointersContainer = wrapper.querySelector('.pointers-container');
+                
+                // Update Height & Text
+                bar.style.height = `${Math.max(val * heightFactor, 4)}px`;
+                valLabel.innerText = val;
+                
+                // Reset Classes & Styles
+                bar.className = 'viz-bar';
+                bar.style.background = ''; // Reset to CSS default gradient
+                bar.style.boxShadow = '';
+                
+                // Heatmap: ON = action highlighting (current step), OFF = cumulative frequency
+                if (isHeatmapEnabled && meta.indices && meta.indices.includes(i)) {
+                    // Show current action (yellow=compare, red=swap)
+                    if (meta.type === 'compare') bar.classList.add('comparing');
+                    if (meta.type === 'swap') bar.classList.add('swapping');
+                    if (meta.type === 'update') bar.classList.add('swapping');
+                } else if (!isHeatmapEnabled && accessCounts[i] > 0) {
+                    // Show cumulative access frequency (blue→red)
+                    const maxAccess = Math.max(...accessCounts, 1);
+                    const intensity = Math.min(accessCounts[i] / maxAccess, 1);
+                    const hue = 220 - (intensity * 220);
+                    bar.style.background = `hsl(${hue}, 80%, 55%)`;
+                    bar.style.boxShadow = `0 4px 10px hsla(${hue}, 80%, 55%, 0.4)`;
+                }
+                
+                // Update Pointers
+                const pointers = [];
+                for (const [k, v] of Object.entries(locals)) {
+                    if (v === i && k !== targetVar && k.length <= 5 && !k.startsWith('_')) {
+                         pointers.push(k);
+                    }
+                }
+                
+                pointersContainer.innerHTML = pointers.map(p => {
+                    const color = POINTER_COLORS[p] || 'var(--accent-primary)';
+                    return `<div class="bar-pointer" style="border-color: ${color}; color: ${color};">${p}</div>`;
+                }).join('');
+            });
+        }
+        
+        function createBarElement(container, index, val, heightFactor) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'bar-wrapper';
+            wrapper.id = `bar-wrap-${index}`;
+            
+            const bar = document.createElement('div');
+            bar.className = 'viz-bar';
+            bar.style.height = `${Math.max(val * heightFactor, 4)}px`;
+            
+            const valLabel = document.createElement('div');
+            valLabel.className = 'bar-val';
+            valLabel.innerText = val;
+            
+            const idxLabel = document.createElement('div');
+            idxLabel.className = 'bar-idx';
+            idxLabel.innerText = index;
+            
+            const pointersContainer = document.createElement('div');
+            pointersContainer.className = 'pointers-container';
+            
+            bar.appendChild(valLabel);
+            wrapper.appendChild(bar);
+            wrapper.appendChild(idxLabel);
+            wrapper.appendChild(pointersContainer);
+            
+            container.appendChild(wrapper);
+        }
+
+        // --- Playback Controls ---
+        function togglePlay() {
+            if (isPlaying) {
+                pause();
+            } else {
+                play();
+            }
+        }
+
+        function play() {
+            if (currentStep >= traceData.length - 1) currentStep = 0;
+            isPlaying = true;
+            document.getElementById('btn-play').innerHTML = '<i class="ri-pause-fill"></i>';
+            document.getElementById('btn-play').classList.add('active');
+            
+            // Clear any existing interval to prevent leaks
+            if (playInterval) clearInterval(playInterval);
+            
+            const delay = 2100 - document.getElementById('speed-slider').value;
+            
+            playInterval = setInterval(() => {
+                if (currentStep < traceData.length - 1) {
+                    stepNext();
+                } else {
+                    pause();
+                }
+            }, delay);
+        }
+
+        function pause() {
+            isPlaying = false;
+            clearInterval(playInterval);
+            document.getElementById('btn-play').innerHTML = '<i class="ri-play-fill"></i>';
+            document.getElementById('btn-play').classList.remove('active');
+        }
+
+        function stepNext() {
+            updateFrame(currentStep + 1);
+        }
+
+        function stepPrev() {
+            updateFrame(currentStep - 1);
+        }
+
+        function scrub(val) {
+            updateFrame(val);
+        }
+
+        // Speed listener
+        document.getElementById('speed-slider').addEventListener('input', function() {
+            if (isPlaying) {
+                pause();
+                play();
+            }
+        });
+
+    </script>
+    
+    <!-- Onboarding for Visualizer -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('visualizer');
+        });
+    </script>
+</body>
+</html>

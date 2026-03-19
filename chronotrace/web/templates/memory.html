@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE - 内存分析</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/pages/dashboard.css">
+    <link rel="stylesheet" href="/static/css/memory.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+    <div class="dashboard-layout">
+        <div class="workspace-split">
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('open')">
+                <i class="ri-menu-line"></i>
+            </button>
+            <!-- Sidebar -->
+            <nav class="sidebar-nav">
+                <div class="brand">
+                    <div class="brand-logo"><i class="ri-code-s-slash-line"></i></div>
+                    <div class="brand-text"><h1>HUAYCODE</h1><span>Pro Visualizer</span></div>
+                </div>
+                <div class="nav-list">
+                    <a href="/" class="nav-link"><i class="ri-dashboard-line"></i> 控制台</a>
+                    <a href="/editor" class="nav-link"><i class="ri-code-box-line"></i> 代码编辑</a>
+                    <a href="/source" class="nav-link"><i class="ri-file-code-line"></i> 源码概览</a>
+                    <a href="/memory" class="nav-link active"><i class="ri-cpu-line"></i> 内存分析</a>
+                    <a href="/visualizer" class="nav-link"><i class="ri-bar-chart-grouped-line"></i> 算法可视化</a>
+                    <a href="/compare" class="nav-link"><i class="ri-git-merge-line"></i> 执行对比</a>
+                    <a href="/settings" class="nav-link"><i class="ri-settings-4-line"></i> 系统设置</a>
+                </div>
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">状态</span>
+                        <span class="status-val" style="color: var(--accent-success)">Ready</span>
+                    </div>
+                </div>
+            </nav>
+
+            <main class="content-area" style="overflow: auto;">
+                <div class="memory-layout">
+                    <header class="memory-header">
+                        <h2>深度内存分析</h2>
+                        <div id="leak-status" class="analysis-status">
+                            <i class="ri-loader-4-line spin"></i> 分析中...
+                        </div>
+                    </header>
+
+                    <!-- Stats Cards -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="ri-bar-chart-2-fill"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>峰值内存</h3>
+                                <span id="mem-peak">-- KB</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon success">
+                                <i class="ri-pulse-line"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>当前占用</h3>
+                                <span id="mem-current">-- KB</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon purple">
+                                <i class="ri-scales-3-line"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>平均消耗</h3>
+                                <span id="mem-avg">-- KB</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Memory Chart -->
+                    <div class="chart-section">
+                        <div class="section-title">
+                            <i class="ri-line-chart-line"></i> 内存趋势图
+                            <!-- Sampling Controls -->
+                            <div class="sampling-controls" style="margin-left: auto;">
+                                <span class="sampling-label">采样:</span>
+                                <button class="sampling-btn active" data-sample="100">100</button>
+                                <button class="sampling-btn" data-sample="500">500</button>
+                                <button class="sampling-btn" data-sample="1000">1000</button>
+                                <button class="sampling-btn" data-sample="0">全部</button>
+                            </div>
+                        </div>
+                        <canvas id="memory-chart-large"></canvas>
+                    </div>
+
+                    <!-- Memory Hotspots -->
+                    <h3 class="section-title" style="margin-top: 40px;">
+                        <i class="ri-fire-fill" style="color: #ff453a;"></i> 内存热点 (Top 5)
+                    </h3>
+                    <div class="hotspots-list" id="hotspots-list">
+                        <div class="empty-state">
+                            <i class="ri-bar-chart-box-line" style="font-size: 48px; display: block; margin-bottom: 16px;"></i>
+                            暂无运行数据，请先运行代码。
+                            <br>
+                            <a href="/editor" style="display: inline-block; margin-top: 16px; padding: 8px 16px; background: var(--accent-primary); color: white; text-decoration: none; border-radius: 8px; font-weight: 500;">
+                                去写代码
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Time Hotspots -->
+                    <h3 class="section-title time-hotspots-section">
+                        <i class="ri-timer-line" style="color: #0a84ff;"></i> 执行时间热点 (Top 5)
+                    </h3>
+                    <div class="hotspots-list" id="time-hotspots-list">
+                        <div class="empty-state">暂无时间数据</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/lib/chart.umd.js"></script>
+    <script>
+        let memoryChart = null;
+        let traceData = null;
+        let currentSampleRate = 100;
+
+        // Sampling function
+        function sampleData(data, maxPoints) {
+            if (!maxPoints || maxPoints === 0 || data.length <= maxPoints) return data;
+            
+            const step = Math.ceil(data.length / maxPoints);
+            const sampled = [];
+            for (let i = 0; i < data.length; i += step) {
+                sampled.push(data[i]);
+            }
+            // Always include last point
+            if (sampled[sampled.length - 1] !== data[data.length - 1]) {
+                sampled.push(data[data.length - 1]);
+            }
+            return sampled;
+        }
+
+        function sampleLabels(data, maxPoints) {
+            if (!maxPoints || maxPoints === 0 || data.length <= maxPoints) {
+                return data.map((_, i) => `Step ${i}`);
+            }
+            
+            const step = Math.ceil(data.length / maxPoints);
+            const sampled = [];
+            for (let i = 0; i < data.length; i += step) {
+                sampled.push(`Step ${i}`);
+            }
+            if (sampled.length < data.length) {
+                sampled.push(`Step ${data.length - 1}`);
+            }
+            return sampled;
+        }
+
+        // Animate number value
+        function animateValue(id, start, end, duration) {
+            const obj = document.getElementById(id);
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = (progress * (end - start) + start).toFixed(2) + ' KB';
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // Render chart with sampling
+        function renderChart(memories) {
+            const ctx = document.getElementById('memory-chart-large').getContext('2d');
+            
+            // Destroy existing chart
+            if (memoryChart) {
+                memoryChart.destroy();
+            }
+
+            const sampledMemories = sampleData(memories, currentSampleRate);
+            const sampledLabels = sampleLabels(memories, currentSampleRate);
+
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(10, 132, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(10, 132, 255, 0)');
+
+            Chart.defaults.color = '#8b949e';
+            Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+
+            memoryChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sampledLabels,
+                    datasets: [{
+                        label: 'Memory Usage (KB)',
+                        data: sampledMemories.map(m => m / 1024),
+                        borderColor: '#0a84ff',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointRadius: sampledMemories.length > 200 ? 0 : 2,
+                        pointHoverRadius: 6,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: sampledMemories.length > 500 ? 0 : 750
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index',
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(28, 28, 30, 0.9)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: (ctx) => `${ctx.parsed.y.toFixed(2)} KB`
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { callback: (v) => v.toFixed(0) + ' KB' }
+                        },
+                        x: { 
+                            display: sampledMemories.length <= 100,
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render hotspots
+        function renderHotspots(hotspots) {
+            const list = document.getElementById('hotspots-list');
+            if (!hotspots || hotspots.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无内存热点数据</div>';
+                return;
+            }
+            
+            list.innerHTML = '';
+            hotspots.forEach((h, index) => {
+                const div = document.createElement('div');
+                div.className = 'hotspot-item';
+                div.style.animationDelay = `${index * 0.1}s`;
+                div.style.opacity = '0';
+                
+                div.innerHTML = `
+                    <div class="hotspot-line">
+                        <i class="ri-error-warning-fill"></i>
+                        <span>Line ${h[0]}</span>
+                    </div>
+                    <span class="hotspot-val">+${(h[1]/1024).toFixed(2)} KB</span>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // Render time hotspots
+        function renderTimeHotspots(timeHotspots) {
+            const list = document.getElementById('time-hotspots-list');
+            if (!timeHotspots || timeHotspots.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无时间热点数据</div>';
+                return;
+            }
+            
+            list.innerHTML = '';
+            timeHotspots.forEach((h, index) => {
+                const div = document.createElement('div');
+                div.className = 'time-hotspot-item';
+                div.style.animationDelay = `${index * 0.1}s`;
+                div.style.opacity = '0';
+                
+                // Format time value properly
+                let timeStr = '0.0μs';
+                const timeVal = parseFloat(h[1]);
+                if (!isNaN(timeVal) && timeVal > 0) {
+                    if (timeVal < 0.000001) {
+                        timeStr = (timeVal * 1000000000).toFixed(0) + 'ns';
+                    } else if (timeVal < 0.001) {
+                        timeStr = (timeVal * 1000000).toFixed(1) + 'μs';
+                    } else if (timeVal < 1) {
+                        timeStr = (timeVal * 1000).toFixed(2) + 'ms';
+                    } else {
+                        timeStr = timeVal.toFixed(3) + 's';
+                    }
+                }
+                
+                div.innerHTML = `
+                    <div class="hotspot-line">
+                        <i class="ri-timer-line" style="color: var(--accent-primary)"></i>
+                        <span>Line ${h[0]}</span>
+                    </div>
+                    <span class="time-hotspot-val">${timeStr}</span>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // Setup sampling controls
+        function setupSamplingControls() {
+            document.querySelectorAll('.sampling-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.sampling-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentSampleRate = parseInt(btn.dataset.sample);
+                    if (traceData && traceData.trace) {
+                        const memories = traceData.trace.map(s => s.memory);
+                        renderChart(memories);
+                    }
+                });
+            });
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupSamplingControls();
+            
+            fetch('/api/trace')
+                .then(res => res.json())
+                .then(data => {
+                    traceData = data;
+                    
+                    if (!data || !data.trace || data.trace.length === 0) {
+                        document.getElementById('leak-status').innerHTML = '<i class="ri-information-line"></i> 等待数据';
+                        return;
+                    }
+                    
+                    const trace = data.trace;
+                    const memories = trace.map(s => s.memory);
+                    const peak = Math.max(...memories) / 1024;
+                    const current = (memories[memories.length - 1]) / 1024;
+                    const avg = (memories.reduce((a, b) => a + b, 0) / memories.length) / 1024;
+                    
+                    // Animate stats
+                    animateValue("mem-peak", 0, peak, 1000);
+                    animateValue("mem-current", 0, current, 1000);
+                    animateValue("mem-avg", 0, avg, 1000);
+                    
+                    // Render chart with sampling
+                    renderChart(memories);
+                    
+                    // Render hotspots
+                    renderHotspots(data.hotspots);
+                    
+                    // Render time hotspots - debug
+                    console.log('[MEMORY] time_hotspots:', data.time_hotspots);
+                    console.log('[MEMORY] data keys:', Object.keys(data));
+                    renderTimeHotspots(data.time_hotspots);
+                    
+                    // Leak status
+                    const leakStatus = document.getElementById('leak-status');
+                    if (current > peak * 0.9 && peak > 100) {
+                        leakStatus.innerHTML = '<i class="ri-alert-fill"></i> 检测到潜在内存泄漏';
+                        leakStatus.className = 'analysis-status warning';
+                    } else {
+                        leakStatus.innerHTML = '<i class="ri-checkbox-circle-fill"></i> 内存状态健康';
+                        leakStatus.className = 'analysis-status healthy';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('leak-status').innerHTML = '<i class="ri-error-warning-line"></i> 数据加载失败';
+                });
+        });
+    </script>
+    
+    <!-- Onboarding for Memory -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('memory');
+        });
+    </script>
+</body>
+</html>

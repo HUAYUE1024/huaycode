@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link href="/static/css/prism-tomorrow.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/pages/dashboard.css">
+</head>
+<body>
+    <script>
+        window.onerror = function(msg, url, line, col, error) {
+            console.error('[Error]', msg, 'at', url + ':' + line + ':' + col);
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('[Promise Error]', e.reason);
+        });
+    </script>
+
+    <div class="dashboard-layout">
+        <div class="workspace-split">
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('open')">
+                <i class="ri-menu-line"></i>
+            </button>
+            <!-- Sidebar -->
+            <nav class="sidebar-nav">
+                <div class="brand">
+                    <div class="brand-logo">
+                        <i class="ri-code-s-slash-line"></i>
+                    </div>
+                    <div class="brand-text">
+                        <h1>HUAYCODE</h1>
+                        <span>Pro Visualizer</span>
+                    </div>
+                </div>
+                
+                <div class="nav-list">
+                    <a href="/" class="nav-link active">
+                        <i class="ri-dashboard-line"></i> 控制台
+                    </a>
+                    <a href="/editor" class="nav-link">
+                        <i class="ri-code-box-line"></i> 代码编辑
+                    </a>
+                    <a href="/source" class="nav-link">
+                        <i class="ri-file-code-line"></i> 源码概览
+                    </a>
+                    <a href="/memory" class="nav-link">
+                        <i class="ri-cpu-line"></i> 内存分析
+                    </a>
+                    <a href="/visualizer" class="nav-link">
+                        <i class="ri-bar-chart-grouped-line"></i> 算法可视化
+                    </a>
+                    <a href="/compare" class="nav-link">
+                        <i class="ri-git-merge-line"></i> 执行对比
+                    </a>
+                    <a href="/settings" class="nav-link">
+                        <i class="ri-settings-4-line"></i> 系统设置
+                    </a>
+                </div>
+
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">状态</span>
+                        <span class="status-val" id="status-text-live">Online</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">引擎</span>
+                        <span class="status-val">HUAYCODE Pro</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">步数</span>
+                        <span class="status-val"><span id="current-step">0</span>/<span id="total-steps">0</span></span>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="content-area">
+                <!-- Top Toolbar -->
+                <header class="top-toolbar">
+                    <div class="playback-group">
+                        <button class="play-btn" id="btn-start" title="开始">
+                            <i class="ri-skip-back-line"></i>
+                        </button>
+                        <button class="play-btn" id="btn-prev" title="上一步">
+                            <i class="ri-arrow-left-s-line"></i>
+                        </button>
+                        <button class="play-btn main-play" id="btn-play-pause" title="播放/暂停">
+                            <i class="ri-play-fill"></i>
+                        </button>
+                        <button class="play-btn" id="btn-next" title="下一步">
+                            <i class="ri-arrow-right-s-line"></i>
+                        </button>
+                        <button class="play-btn" id="btn-end" title="结束">
+                            <i class="ri-skip-forward-line"></i>
+                        </button>
+                    </div>
+
+                    <div class="timeline-wrapper">
+                        <div class="timeline-info">
+                            <span>时间轴</span>
+                            <span id="time-display">00:00.000</span>
+                        </div>
+                        <input type="range" class="timeline-track" id="timeline-slider" min="0" max="0" value="0">
+                    </div>
+                </header>
+
+                <div class="workspace-split" style="flex: 1; overflow: hidden;">
+                    <!-- Code Panel -->
+                    <section class="code-view-panel">
+                        <div class="panel-header">
+                            <span><i class="ri-code-s-slash-line"></i> 执行源码</span>
+                            <i class="ri-fullscreen-line" style="cursor: pointer;" onclick="window.location.href='/editor'"></i>
+                        </div>
+                        <div class="code-container">
+                            <div class="line-numbers-col" id="line-numbers">
+                                <!-- JS Populated -->
+                            </div>
+                            <div class="code-scroll-content">
+                                <div class="active-line-highlight" id="line-highlight"></div>
+                                <pre><code class="language-python" id="code-display">加载中...</code></pre>
+                            </div>
+                        </div>
+                        
+                        <!-- Console Mini -->
+                        <div class="console-mini-panel">
+                            <span style="color: #2ea043; margin-right: 8px;">➜</span>
+                            <span id="console-last-line">系统就绪...</span>
+                            <div class="console-actions">
+                                <button class="console-btn" id="btn-breakpoint-mode" title="断点模式 (B)">
+                                    <i class="ri-checkbox-blank-circle-line"></i>
+                                </button>
+                                <span class="breakpoint-badge" id="breakpoint-count">0</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Data Panel -->
+                    <section class="data-view-panel">
+                        <!-- Step Insight -->
+                        <div class="step-insight-box" id="step-insight">
+                            <div class="insight-title"><i class="ri-lightbulb-line"></i> 步骤解析</div>
+                            <div id="insight-text">准备执行代码追踪。</div>
+                        </div>
+
+                        <div class="data-section">
+                            <div class="panel-header">
+                                <span><i class="ri-braces-line"></i> 变量上下文</span>
+                            </div>
+                            <div class="data-content" id="variables-container">
+                                <!-- JS Populated -->
+                                <div style="color: #484f58; text-align: center; margin-top: 20px;">
+                                    当前作用域无变量
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Execution Stats -->
+                        <div class="data-section stats-section">
+                            <div class="panel-header">
+                                <span><i class="ri-timer-line"></i> 执行统计</span>
+                            </div>
+                            <div class="stats-grid-mini" id="stats-container">
+                                <div class="stat-mini-item">
+                                    <span class="stat-mini-label">执行时间</span>
+                                    <span class="stat-mini-val" id="exec-time">--</span>
+                                </div>
+                                <div class="stat-mini-item">
+                                    <span class="stat-mini-label">行耗时</span>
+                                    <span class="stat-mini-val" id="line-time">--</span>
+                                </div>
+                                <div class="stat-mini-item">
+                                    <span class="stat-mini-label">内存</span>
+                                    <span class="stat-mini-val" id="current-mem">--</span>
+                                </div>
+                                <div class="stat-mini-item">
+                                    <span class="stat-mini-label">峰值</span>
+                                    <span class="stat-mini-val" id="peak-mem">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Call Stack -->
+                        <div class="data-section call-stack-section">
+                            <div class="panel-header">
+                                <span><i class="ri-stack-line"></i> 调用栈</span>
+                            </div>
+                            <div class="call-stack-content" id="call-stack-container">
+                                <div class="stack-empty">全局作用域</div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/lib/prism.min.js"></script>
+    <script src="/static/lib/prism-python.min.js"></script>
+    <script src="/static/lib/chart.umd.js"></script>
+    <script src="/static/onboarding.js"></script>
+    <script src="/static/script.js"></script>
+    <script>
+        // Initialize onboarding for this page
+        document.addEventListener('DOMContentLoaded', () => {
+            // Clean up any leftover elements
+            ['onboarding-overlay', 'onboarding-spotlight', 'onboarding-tooltip', 'onboarding-modal', 'onboarding-step-indicator'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.remove();
+            });
+            
+            initOnboarding('index');
+        });
+        
+        // Clean up before page unload
+        window.addEventListener('beforeunload', () => {
+            const overlay = document.getElementById('onboarding-overlay');
+            if (overlay) overlay.classList.remove('active');
+        });
+    </script>
+</body>
+</html>

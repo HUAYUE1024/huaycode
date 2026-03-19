@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUAYCODE - 系统设置</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="/static/css/google-fonts.css" rel="stylesheet">
+    <link href="/static/css/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/pages/dashboard.css">
+    <link rel="stylesheet" href="/static/css/settings.css">
+</head>
+<body>
+    <script>
+        window.onerror=function(m,u,l){console.error('[Error]',m,u+':'+l);return false};
+        window.addEventListener('unhandledrejection',e=>console.error('[Promise Error]',e.reason));
+    </script>
+    <div class="dashboard-layout">
+        <div class="workspace-split">
+            <!-- Mobile Menu Toggle -->
+            <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('open')">
+                <i class="ri-menu-line"></i>
+            </button>
+            <!-- Sidebar -->
+            <nav class="sidebar-nav">
+                <div class="brand">
+                    <div class="brand-logo"><i class="ri-code-s-slash-line"></i></div>
+                    <div class="brand-text"><h1>HUAYCODE</h1><span>Pro Visualizer</span></div>
+                </div>
+                <div class="nav-list">
+                    <a href="/" class="nav-link"><i class="ri-dashboard-line"></i> 控制台</a>
+                    <a href="/editor" class="nav-link"><i class="ri-code-box-line"></i> 代码编辑</a>
+                    <a href="/source" class="nav-link"><i class="ri-file-code-line"></i> 源码概览</a>
+                    <a href="/memory" class="nav-link"><i class="ri-cpu-line"></i> 内存分析</a>
+                    <a href="/visualizer" class="nav-link"><i class="ri-bar-chart-grouped-line"></i> 算法可视化</a>
+                    <a href="/compare" class="nav-link"><i class="ri-git-merge-line"></i> 执行对比</a>
+                    <a href="/settings" class="nav-link active"><i class="ri-settings-4-line"></i> 系统设置</a>
+                </div>
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">状态</span>
+                        <span class="status-val" style="color: var(--accent-success)">Ready</span>
+                    </div>
+                </div>
+            </nav>
+
+            <main class="content-area" style="overflow: auto;">
+                <div class="settings-container">
+                    <header class="settings-header">
+                        <h2>系统偏好设置</h2>
+                        <span>自定义 HUAYCODE 引擎的运行与交互行为。</span>
+                    </header>
+
+                    <!-- Playback Settings -->
+                    <section class="settings-section">
+                        <div class="section-title">
+                            <i class="ri-film-line"></i> 播放控制
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>执行延迟</h4>
+                                <span>控制每一步代码执行的间隔时间，越慢越细腻。</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 16px;">
+                                <input type="range" min="50" max="3000" step="50" value="1000" id="speed-slider">
+                                <span id="speed-val" style="font-family: monospace; color: var(--accent-primary); font-weight: bold; min-width: 60px;">1000ms</span>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>自动滚动追踪</h4>
+                                <span>代码执行时，自动将高亮行保持在视图中心。</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="auto-scroll-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <!-- UI Settings -->
+                    <section class="settings-section">
+                        <div class="section-title">
+                            <i class="ri-layout-2-line"></i> 界面体验
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>动画效果</h4>
+                                <span>启用平滑过渡和 3D 视觉效果。</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" checked id="anim-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </section>
+                    
+                    <!-- Advanced -->
+                    <section class="settings-section">
+                        <div class="section-title">
+                            <i class="ri-cpu-line"></i> 引擎内核
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>最大追踪步数</h4>
+                                <span>防止无限循环导致浏览器崩溃。</span>
+                            </div>
+                            <select class="custom-select" id="max-steps">
+                                <option value="1000">1,000 步</option>
+                                <option value="5000" selected>5,000 步</option>
+                                <option value="10000">10,000 步</option>
+                                <option value="50000">50,000 步</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <!-- Keyboard Shortcuts -->
+                    <section class="settings-section">
+                        <div class="section-title">
+                            <i class="ri-keyboard-line"></i> 键盘快捷键
+                        </div>
+                        
+                        <div class="shortcuts-grid">
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">运行代码</span>
+                                <span class="shortcut-key">Ctrl + Enter</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">撤销</span>
+                                <span class="shortcut-key">Ctrl + Z</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">重做</span>
+                                <span class="shortcut-key">Ctrl + Y</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">格式化代码</span>
+                                <span class="shortcut-key">Shift + Alt + F</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">上一步</span>
+                                <span class="shortcut-key">←</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">下一步</span>
+                                <span class="shortcut-key">→</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">播放/暂停</span>
+                                <span class="shortcut-key">Space</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">跳转到开始</span>
+                                <span class="shortcut-key">Home</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- About -->
+                    <section class="settings-section">
+                        <div class="section-title">
+                            <i class="ri-information-line"></i> 关于
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>版本信息</h4>
+                                <span>当前运行版本</span>
+                            </div>
+                            <span class="version-badge">v2.2.0 (Pro)</span>
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-info">
+                                <h4>重置所有设置</h4>
+                                <span>恢复系统默认配置，这将清除所有本地缓存。</span>
+                            </div>
+                            <button id="btn-reset-all" class="btn-reset">
+                                <i class="ri-refresh-line"></i> 立即重置
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast">
+        <i class="ri-checkbox-circle-fill"></i> 设置已保存
+    </div>
+    
+    <script>
+        // Settings Logic
+        const slider = document.getElementById('speed-slider');
+        const speedVal = document.getElementById('speed-val');
+        const toast = document.getElementById('toast');
+        
+        // Load saved settings
+        const savedSpeed = localStorage.getItem('huay_speed') || 1000;
+        slider.value = savedSpeed;
+        speedVal.textContent = savedSpeed + 'ms';
+        
+        // Restore toggles
+        document.getElementById('auto-scroll-toggle').checked = localStorage.getItem('huay_autoscroll') !== 'false';
+        document.getElementById('anim-toggle').checked = localStorage.getItem('huay_anim') !== 'false';
+        document.getElementById('max-steps').value = localStorage.getItem('huay_maxsteps') || '5000';
+
+        function showToast(msg, type = 'success') {
+            toast.innerHTML = `<i class="ri-${type === 'error' ? 'error-warning' : 'checkbox-circle'}-fill"></i> ${msg || '设置已保存'}`;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // Speed Slider
+        slider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            speedVal.textContent = val + 'ms';
+            localStorage.setItem('huay_speed', val);
+        });
+        
+        slider.addEventListener('change', () => showToast());
+        
+        // Toggles
+        document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => {
+            localStorage.setItem('huay_autoscroll', e.target.checked);
+            showToast();
+        });
+        
+        document.getElementById('anim-toggle').addEventListener('change', (e) => {
+            localStorage.setItem('huay_anim', e.target.checked);
+            showToast();
+        });
+        
+        document.getElementById('max-steps').addEventListener('change', (e) => {
+            localStorage.setItem('huay_maxsteps', e.target.value);
+            showToast();
+        });
+
+        // Reset All
+        document.getElementById('btn-reset-all').addEventListener('click', () => {
+            if(confirm('确定要重置所有设置吗？这将清除所有本地存储的偏好。')) {
+                localStorage.clear();
+                showToast('已重置所有设置');
+                setTimeout(() => location.reload(), 1000);
+            }
+        });
+    </script>
+    
+    <!-- Onboarding for Settings -->
+    <script src="/static/onboarding.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            initOnboarding('settings');
+        });
+    </script>
+</body>
+</html>

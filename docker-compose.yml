@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # HUAYCODE Application
+  huaycode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: huaycode-app
+    restart: unless-stopped
+    expose:
+      - "5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    volumes:
+      - app-data:/app/data
+    networks:
+      - huaycode-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: huaycode-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      huaycode:
+        condition: service_healthy
+    networks:
+      - huaycode-network
+
+volumes:
+  app-data:
+    driver: local
+  nginx-logs:
+    driver: local
+
+networks:
+  huaycode-network:
+    driver: bridge
