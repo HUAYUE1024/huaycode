@@ -89,6 +89,16 @@ def validate_code_safety(code_string: str) -> Optional[str]:
     except SyntaxError as e:
         return f"Syntax error: {e}"
 
+    dangerous_attrs = {
+        '__subclasses__', '__bases__',
+        '__globals__', '__code__', '__builtins__',
+        '__import__', '__loader__',
+    }
+
+    dangerous_subscript_keys = {
+        '__builtins__', '__globals__', '__import__',
+    }
+
     for node in ast.walk(tree):
         # Block dangerous imports
         if isinstance(node, ast.Import):
@@ -103,23 +113,60 @@ def validate_code_safety(code_string: str) -> Optional[str]:
                 if module in BLOCKED_MODULES:
                     return f"Blocked import from: {node.module}"
 
-        # Block dangerous function calls
+        # Block dangerous function calls by name
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name):
                 if node.func.id in BLOCKED_BUILTINS:
                     return f"Blocked function call: {node.func.id}"
 
+            # Block calls via attribute: obj.dangerous()
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr in BLOCKED_BUILTINS:
+                    return f"Blocked function call: {node.func.attr}"
+
         # Block attribute access to dangerous dunder methods
         if isinstance(node, ast.Attribute):
-            dangerous_attrs = {
-                '__subclasses__', '__bases__',
-                '__globals__', '__code__', '__builtins__',
-                '__import__', '__loader__',
-            }
             if node.attr in dangerous_attrs:
                 return f"Blocked attribute access: {node.attr}"
 
+        # Block __builtins__ and other dangerous keys via subscript: obj['__builtins__']
+        if isinstance(node, ast.Subscript):
+            if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                if node.slice.value in dangerous_subscript_keys:
+                    return f"Blocked subscript access: {node.slice.value}"
+
+        # Block type() with dynamic bases that could escape sandbox
+        # type('X', (object,), {'__builtins__': ...})
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id == 'type':
+                if len(node.args) == 3:
+                    if isinstance(node.args[2], ast.Dict):
+                        for key_node in node.args[2].keys:
+                            if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+                                if key_node.value in dangerous_subscript_keys:
+                                    return f"Blocked type() with dangerous key: {key_node.value}"
+
+        # Block chr() calls that could reconstruct blocked names
+        # chr(...)[chr(...)] patterns - already covered by ast.Call check above for chr
+        # but we also need to block attribute access patterns like:
+        # getattr(obj, chr(...)) - covered by getattr being in BLOCKED_BUILTINS
+
     return None
+
+
+def _apply_resource_limits():
+    """Apply OS resource limits to the current process. Unix only."""
+    try:
+        import resource
+        # Limit virtual memory to 256MB
+        resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
+        # Limit number of open file descriptors
+        resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+        # Limit CPU time to 30 seconds
+        resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    except (ImportError, ValueError, OSError):
+        # resource module not available (Windows) or limit already lower
+        pass
 
 
 def execute_sandboxed(code_string: str, timeout: int = 10) -> Dict[str, Any]:
@@ -136,7 +183,7 @@ def execute_sandboxed(code_string: str, timeout: int = 10) -> Dict[str, Any]:
     """
     def worker(code: str, result_queue):
         try:
-            # Validate code safety
+            # Validate code safety (defense in depth)
             error = validate_code_safety(code)
             if error:
                 result_queue.put({
@@ -150,6 +197,9 @@ def execute_sandboxed(code_string: str, timeout: int = 10) -> Dict[str, Any]:
 
             # Create restricted environment
             restricted_globals = create_restricted_globals()
+
+            # Apply resource limits
+            _apply_resource_limits()
 
             # Capture output
             old_stdout = sys.stdout
@@ -225,8 +275,27 @@ def execute_in_subprocess(code_string: str, timeout: int = 10) -> Dict[str, Any]
 def _trace_worker(code: str, steps: int, result_queue):
     """Worker function for trace_code_sandboxed - must be module-level for pickling."""
     try:
-        import sys
         import os
+
+        # Apply resource limits first
+        _apply_resource_limits()
+
+        # Validate code safety (defense in depth - subprocess level)
+        error = validate_code_safety(code)
+        if error:
+            result_queue.put({
+                'success': False,
+                'had_error': True,
+                'error': f'Security check failed: {error}',
+                'steps': 0,
+                'trace': [],
+                'output': [],
+                'source': [],
+                'hotspots': [],
+                'time_hotspots': [],
+                'total_exec_time': 0,
+            })
+            return
 
         # Add project to path
         sandbox_dir = os.path.dirname(os.path.abspath(__file__))

@@ -9,31 +9,31 @@
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ed?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-**逐行追踪代码执行 · 可视化内存变化 · 动态演示算法过程**
+**逐行追踪代码执行 / 可视化内存变化 / 动态演示算法过程**
 
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [部署指南](#-部署指南) · [API 文档](#-api-文档) · [项目结构](#-项目结构)
+[功能特性](#功能特性) · [快速开始](#快速开始) · [安全架构](#安全架构) · [部署指南](#部署指南) · [API 文档](#api-文档) · [项目结构](#项目结构)
 
 ---
 
 </div>
 
-## 📖 简介
+## 简介
 
-HUAYCODE 是一款专业的 Python 代码执行可视化工具，通过先进的追踪技术，让每一行代码的执行过程都清晰可见。无论是算法学习、代码调试还是性能分析，HUAYCODE 都能提供直观的可视化体验。
+HUAYCODE 是一款 Python 代码执行可视化工具，通过逐行追踪技术，让每一行代码的执行过程都清晰可见。适用于算法学习、代码调试和性能分析。
 
 ### 核心亮点
 
-- 🔍 **逐行执行追踪** - 实时记录每一步的变量状态、内存消耗、调用栈
-- 📊 **内存分析** - 基于 `tracemalloc` 的精确内存追踪，定位热点代码
-- 🎬 **算法可视化** - 动态柱状图演示排序/搜索算法的执行过程
-- 🎨 **专业界面** - 暗色玻璃拟态设计，支持响应式布局
-- 🚀 **一键部署** - Docker + Nginx 生产级部署方案
+- **逐行执行追踪** - 实时记录每一步的变量状态、内存消耗、调用栈
+- **内存分析** - 基于 `tracemalloc` 的精确内存追踪，定位热点代码
+- **算法可视化** - 动态柱状图演示排序/搜索算法的执行过程
+- **沙箱隔离** - 用户代码在子进程中执行，主进程不受影响
+- **一键部署** - Docker + Nginx 生产级部署方案
 
 ---
 
-## ✨ 功能特性
+## 功能特性
 
-### 🖥️ 控制台 (`/`)
+### 控制台 (`/`)
 
 主仪表盘，提供代码执行的全局视图：
 
@@ -58,7 +58,7 @@ B         切换断点模式
 N         跳转到下一断点
 ```
 
-### ✏️ 代码编辑器 (`/editor`)
+### 代码编辑器 (`/editor`)
 
 基于 Ace Editor 的专业代码编辑环境：
 
@@ -84,7 +84,7 @@ Shift + Alt + F 格式化代码
 | 搜索 | 二分查找、线性查找 |
 | 递归 | 斐波那契序列 |
 
-### 📈 算法可视化 (`/visualizer`)
+### 算法可视化 (`/visualizer`)
 
 将抽象的算法执行过程转化为直观的动态演示：
 
@@ -96,7 +96,7 @@ Shift + Alt + F 格式化代码
 - **DOM 差量更新** - 高效渲染，复用 DOM 节点
 - **实时统计** - 比较次数、交换次数、访问次数
 
-### 🔬 内存分析 (`/memory`)
+### 内存分析 (`/memory`)
 
 深度分析代码执行过程中的内存消耗：
 
@@ -106,7 +106,7 @@ Shift + Alt + F 格式化代码
 - **时间热点** - Top 5 执行时间最长的代码行
 - **泄漏检测** - 智能判断是否存在潜在内存泄漏
 
-### 🔄 执行对比 (`/compare`)
+### 执行对比 (`/compare`)
 
 对比两次代码执行的差异：
 
@@ -117,7 +117,7 @@ Shift + Alt + F 格式化代码
   - 执行路径分析（分叉点、公共前缀）
   - 内存消耗趋势对比
 
-### 📄 源码概览 (`/source`)
+### 源码概览 (`/source`)
 
 全局代码执行覆盖视图：
 
@@ -125,7 +125,7 @@ Shift + Alt + F 格式化代码
 - **代码小地图** - Canvas 绘制的文件结构概览
 - **一键复制** - 快速复制源代码
 
-### ⚙️ 系统设置 (`/settings`)
+### 系统设置 (`/settings`)
 
 - 执行延迟调节（50ms - 3000ms）
 - 自动滚动开关
@@ -136,7 +136,39 @@ Shift + Alt + F 格式化代码
 
 ---
 
-## 🚀 快速开始
+## 安全架构
+
+所有用户代码都在独立子进程中执行，主进程不受影响。防御分三层：
+
+```
+用户请求
+  │
+  ▼
+[L1] 主进程 AST 检查 ── validate_code_safety()
+  │  拦截: 危险 import、eval/exec/open 等调用、
+  │       __subclasses__ 等 dunder 属性、
+  │       字典下标 __builtins__ 访问、
+  │       type() 动态类构造
+  │
+  ▼
+[L2] 子进程 validate_code_safety() ── 二次校验
+  │
+[L3] 子进程 restricted globals ── create_restricted_globals()
+  │  仅暴露安全 builtins，阻断 os/sys/subprocess 等
+  │
+[L4] 子进程 resource limits ── _apply_resource_limits()
+     虚拟内存 256MB / CPU 30s / 文件描述符 64
+```
+
+**关键设计：**
+- `spawn` 子进程：完全独立的解释器，不继承主进程状态
+- `sys.settrace` 隔离：追踪钩子只在子进程内生效
+- 双重 AST 校验：主进程 + 子进程各校验一次
+- OS 级资源限制：`resource.setrlimit` 限制内存和 CPU（Linux/Mac）
+
+---
+
+## 快速开始
 
 ### 环境要求
 
@@ -171,7 +203,7 @@ def bubble_sort():
                 data[j], data[j+1] = data[j+1], data[j]
     return data
 
-bubble_sort()  # 自动打开浏览器显示可视化界面
+bubble_sort()
 ```
 
 #### 方式二：Web 编辑器
@@ -200,7 +232,7 @@ result = trace_code(code)
 
 ---
 
-## 🐳 部署指南
+## 部署指南
 
 ### 一键部署（推荐）
 
@@ -243,11 +275,8 @@ docker-compose down
 ### 部署架构
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   用户浏览器 │────▶│    Nginx    │────▶│  HUAYCODE   │
-│             │     │  (反向代理)  │     │  (Flask)    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                         :80/443              :5000
+用户浏览器 ──> Nginx (反向代理) ──> HUAYCODE (Flask)
+              :80/443              :5000
 ```
 
 **Nginx 特性：**
@@ -259,22 +288,22 @@ docker-compose down
 
 ---
 
-## 📡 API 文档
+## API 文档
 
 ### 系统接口
 
 | 端点 | 方法 | 描述 |
 |------|------|------|
-| `/api/status` | GET | 系统状态（版本、环境、分支） |
-| `/api/trace` | GET | 当前追踪数据 |
-| `/api/history` | GET | 执行历史列表（最多 20 条） |
-| `/api/history/<id>` | GET | 指定历史记录详情 |
+| `/api/v1/status` | GET | 系统状态（版本、环境、分支） |
+| `/api/v1/trace` | GET | 当前追踪数据 |
+| `/api/v1/history` | GET | 执行历史列表（最多 20 条） |
+| `/api/v1/history/<id>` | GET | 指定历史记录详情 |
 
 ### 执行接口
 
-#### `POST /api/run`
+#### `POST /api/v1/run`
 
-执行 Python 代码并返回追踪数据。
+执行 Python 代码并返回追踪数据。代码在沙箱子进程中执行。
 
 **请求体：**
 ```json
@@ -283,7 +312,7 @@ docker-compose down
 }
 ```
 
-**限制：** 代码长度最大 50,000 字符
+**限制：** 代码长度最大 50,000 字符，执行超时 30 秒
 
 **响应：**
 ```json
@@ -315,7 +344,7 @@ docker-compose down
 }
 ```
 
-#### `POST /api/compare`
+#### `POST /api/v1/compare`
 
 对比两次执行结果。
 
@@ -372,72 +401,51 @@ Referrer-Policy: strict-origin-when-cross-origin
 
 ---
 
-## 📁 项目结构
+## 项目结构
 
 ```
 HUAYCODE/
 ├── chronotrace/                    # 核心 Python 包
 │   ├── __init__.py                 # 包初始化，导出 trace 装饰器
 │   ├── core.py                     # 追踪引擎（sys.settrace + tracemalloc）
-│   │   ├── LineMapper              # AST 节点访问器
-│   │   ├── StreamCapturer          # stdout 拦截器
-│   │   ├── analyze_ast()           # 语法树分析
-│   │   ├── serialize()             # 对象序列化
-│   │   ├── trace()                 # 装饰器入口
-│   │   └── trace_code()            # 代码执行追踪
+│   ├── sandbox.py                  # 沙箱隔离、安全校验、子进程执行
 │   ├── examples/
 │   │   └── bubble_sort.py          # 冒泡排序示例
 │   └── web/                        # Web 应用
 │       ├── app.py                  # Flask 服务器 + API 路由
 │       ├── static/
 │       │   ├── css/
-│       │   │   ├── pages/          # 页面级样式
-│       │   │   │   ├── dashboard.css
-│       │   │   │   ├── editor.css
-│       │   │   │   └── source.css
-│       │   │   ├── memory.css
-│       │   │   ├── compare.css
-│       │   │   ├── visualizer.css
-│       │   │   └── settings.css
-│       │   ├── lib/                # 第三方库（本地化）
-│       │   │   ├── ace/            # Ace Editor
-│       │   │   ├── chart.umd.js    # Chart.js
-│       │   │   ├── gsap/           # GSAP 动画
-│       │   │   └── prism*.js       # 语法高亮
-│       │   ├── fonts/              # Web 字体
-│       │   ├── script.js           # 控制台主逻辑
-│       │   ├── onboarding.js       # 多页面新手引导
-│       │   ├── style.css           # 通用样式
-│       │   └── favicon.svg         # 网站图标
+│       │   ├── lib/
+│       │   ├── fonts/
+│       │   ├── script.js
+│       │   ├── onboarding.js
+│       │   ├── style.css
+│       │   └── favicon.svg
 │       └── templates/
-│           ├── index.html          # 控制台
-│           ├── editor.html         # 代码编辑器
-│           ├── visualizer.html     # 算法可视化
-│           ├── source.html         # 源码概览
-│           ├── memory.html         # 内存分析
-│           ├── compare.html        # 执行对比
-│           └── settings.html       # 系统设置
+│           ├── index.html
+│           ├── editor.html
+│           ├── visualizer.html
+│           ├── source.html
+│           ├── memory.html
+│           ├── compare.html
+│           └── settings.html
 ├── examples/
 │   └── demo.py                     # QuickSort 演示
 ├── tests/
 │   └── test_core.py                # 单元测试
 ├── nginx/                          # Nginx 配置
-│   ├── nginx.conf                  # 主配置
-│   └── conf.d/
-│       └── huaycode.conf           # 站点配置
-├── Dockerfile                      # Docker 镜像定义
-├── docker-compose.yml              # Docker Compose 编排
-├── deploy.sh                       # Linux/Mac 一键部署
-├── deploy.bat                      # Windows 一键部署
-├── .dockerignore                   # Docker 构建排除
-├── requirements.txt                # Python 依赖
-├── test_run.py                     # API 测试脚本
-└── test_script.py                  # 装饰器测试脚本
+├── Dockerfile
+├── docker-compose.yml
+├── deploy.sh
+├── deploy.bat
+├── requirements.txt
+├── test_run.py
+└── test_script.py
 ```
 
 ---
 
-## ⚙️ 配置说明
+## 配置说明
 
 ### 客户端配置（localStorage）
 
@@ -456,8 +464,10 @@ HUAYCODE/
 | 服务端口 | - | 5000 | Flask 监听端口 |
 | 代码长度 | - | 50000 | 最大代码字符数 |
 | 历史记录 | - | 20 | 最大执行历史数 |
-| 序列化深度 | - | 3 | 对象序列化层级 |
-| 列表截断 | - | 100 | 序列化最大元素数 |
+| 序列化深度 | - | 2 | 对象序列化层级 |
+| 列表截断 | - | 50 | 序列化最大元素数 |
+| 执行超时 | - | 30s | 子进程最大执行时间 |
+| 内存限制 | - | 256MB | 子进程虚拟内存上限 |
 
 ### Docker 环境变量
 
@@ -470,20 +480,17 @@ HUAYCODE/
 
 ---
 
-## 🔧 技术实现
+## 技术实现
 
 ### 后端架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Flask Server                      │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌────────┐ │
-│  │  路由层  │  │  API层  │  │ 追踪层  │  │ 存储层 │ │
-│  │ (views) │─▶│ (api)   │─▶│ (trace) │─▶│(memory)│ │
-│  └─────────┘  └─────────┘  └─────────┘  └────────┘ │
-│                        │                             │
-│              sys.settrace + tracemalloc              │
-└─────────────────────────────────────────────────────┘
+Flask Server
+  路由层 (views) -> API层 (api) -> 追踪层 (trace) -> 存储层 (memory)
+                                      |
+                         sys.settrace + tracemalloc
+                                      |
+                            子进程沙箱隔离 (spawn)
 ```
 
 **核心技术：**
@@ -491,19 +498,16 @@ HUAYCODE/
 - `tracemalloc` - 内存分配追踪
 - `ast` - 抽象语法树分析，识别语句类型
 - `gc` - 垃圾回收统计
+- `multiprocessing` - 子进程隔离执行
+- `resource` - OS 级资源限制
 
 ### 前端架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Browser                           │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌────────┐ │
-│  │  DOM层  │  │ 状态层  │  │ 渲染层  │  │ 音频层 │ │
-│  │ (HTML)  │◀─│ (State) │─▶│ (Canvas)│─▶│(Audio) │ │
-│  └─────────┘  └─────────┘  └─────────┘  └────────┘ │
-│         │            │            │                  │
-│    Ace Editor   DOM Diffing   Web Audio API         │
-└─────────────────────────────────────────────────────┘
+Browser
+  DOM层 (HTML) <- 状态层 (State) -> 渲染层 (Canvas) -> 音频层 (Audio)
+       |              |                  |
+  Ace Editor    DOM Diffing       Web Audio API
 ```
 
 **核心技术：**
@@ -514,7 +518,7 @@ HUAYCODE/
 
 ---
 
-## 🧪 测试
+## 测试
 
 ```bash
 # 运行单元测试
@@ -529,21 +533,22 @@ python test_script.py
 
 ---
 
-## ⚠️ 已知限制
+## 已知限制
 
 | 限制 | 说明 |
 |------|------|
 | 仅支持 Python | 无法追踪其他语言代码 |
-| 序列化深度 | 对象序列化最大 3 层嵌套 |
-| 列表长度 | 序列化时超过 100 个元素会被截断 |
+| 序列化深度 | 对象序列化最大 2 层嵌套 |
+| 列表长度 | 序列化时超过 50 个元素会被截断 |
 | 递归追踪 | 深度递归可能导致追踪数据过大 |
-| 执行超时 | 代码执行无超时限制，长时间运行会阻塞 |
+| 子进程超时 | 代码执行超过 30 秒会被终止 |
+| Windows 资源限制 | `resource.setrlimit` 仅在 Linux/Mac 生效 |
 
 ---
 
-## 🤝 贡献
+## 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request。
 
 1. Fork 本仓库
 2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
@@ -553,16 +558,6 @@ python test_script.py
 
 ---
 
-## 📄 许可证
+## 许可证
 
 本项目基于 MIT 许可证开源 - 详见 [LICENSE](LICENSE) 文件
-
----
-
-<div align="center">
-
-**HUAYCODE v2.2.0 (Pro)**
-
-Made with ❤️ by HUAYCODE Team
-
-</div>

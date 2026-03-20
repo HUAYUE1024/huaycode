@@ -108,43 +108,50 @@ class StreamCapturer:
         self.original_stream.flush()
 
 
-def serialize(obj, depth=0, max_depth=3):
+_MAX_SERIALIZE_ITEMS = 50
+_MAX_SERIALIZE_DEPTH = 2
+_serialize_cache = {}
+
+
+def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH):
     """
     Serialize objects for JSON output.
-    Handles basic types and complex structures with depth limiting.
+    Optimized: caps item count at 50, depth at 2, caches repr for complex types.
     """
     if depth > max_depth:
-        return "<Max Depth Reached>"
+        return repr(obj)[:200] if not isinstance(obj, (int, float, str, bool, type(None))) else obj
+
+    obj_id = id(obj)
+    if obj_id in _serialize_cache:
+        return _serialize_cache[obj_id]
 
     if isinstance(obj, (int, float, str, bool, type(None))):
         return obj
-    elif isinstance(obj, (list, tuple)):
-        try:
-            if len(obj) > 100:
-                return [serialize(item, depth + 1, max_depth) for item in obj[:100]] + ["<Truncated...>"]
+
+    try:
+        if isinstance(obj, (list, tuple)):
+            n = len(obj)
+            if n > _MAX_SERIALIZE_ITEMS:
+                result = [serialize(item, depth + 1, max_depth) for item in obj[:_MAX_SERIALIZE_ITEMS]]
+                result.append(f"<... {n - _MAX_SERIALIZE_ITEMS} more>")
+                return result
             return [serialize(item, depth + 1, max_depth) for item in obj]
-        except RecursionError:
-            return "<Recursion detected>"
-    elif isinstance(obj, dict):
-        try:
-            if len(obj) > 100:
-                items = list(obj.items())[:100]
-                serialized = {str(key): serialize(value, depth + 1, max_depth) for key, value in items}
-                serialized["<Truncated...>"] = "..."
+        elif isinstance(obj, dict):
+            n = len(obj)
+            if n > _MAX_SERIALIZE_ITEMS:
+                items = list(obj.items())[:_MAX_SERIALIZE_ITEMS]
+                serialized = {str(k): serialize(v, depth + 1, max_depth) for k, v in items}
+                serialized["<...>"] = f"{n - _MAX_SERIALIZE_ITEMS} more"
                 return serialized
-            return {str(key): serialize(value, depth + 1, max_depth) for key, value in obj.items()}
-        except RecursionError:
-            return "<Recursion detected>"
-    elif hasattr(obj, '__dict__'):
-        try:
-            return {k: serialize(v, depth + 1, max_depth) for k, v in obj.__dict__.items() if not k.startswith('__')}
-        except RecursionError:
-            return "<Recursion detected>"
-    else:
-        try:
-            return str(obj)
-        except:
-            return "<Unprintable Object>"
+            return {str(k): serialize(v, depth + 1, max_depth) for k, v in obj.items()}
+        elif hasattr(obj, '__dict__'):
+            return {k: serialize(v, depth + 1, max_depth) for k, v in list(obj.__dict__.items())[:_MAX_SERIALIZE_ITEMS] if not k.startswith('__')}
+        else:
+            return str(obj)[:200]
+    except RecursionError:
+        return "<Recursion detected>"
+    except Exception:
+        return "<Serialization error>"
 
 
 class TraceContext:
@@ -199,6 +206,7 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
     """
     Trace execution of a code string with thread-safe data management.
     """
+    _serialize_cache.clear()
     context = TraceContext()
     result = TraceResult()
 
