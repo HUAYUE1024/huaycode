@@ -220,3 +220,81 @@ def execute_sandboxed(code_string: str, timeout: int = 10) -> Dict[str, Any]:
 def execute_in_subprocess(code_string: str, timeout: int = 10) -> Dict[str, Any]:
     """Deprecated: use execute_sandboxed instead."""
     return execute_sandboxed(code_string, timeout)
+
+
+def _trace_worker(code: str, steps: int, result_queue):
+    """Worker function for trace_code_sandboxed - must be module-level for pickling."""
+    try:
+        import sys
+        import os
+
+        # Add project to path
+        sandbox_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(sandbox_dir)
+        if project_dir not in sys.path:
+            sys.path.insert(0, project_dir)
+
+        from chronotrace.core import trace_code
+
+        result = trace_code(code, max_steps=steps)
+        result_queue.put(result.to_dict())
+
+    except Exception as e:
+        result_queue.put({
+            'success': False,
+            'had_error': True,
+            'error': str(e),
+            'steps': 0,
+            'trace': [],
+            'output': [],
+            'source': [],
+            'hotspots': [],
+            'time_hotspots': [],
+            'total_exec_time': 0,
+        })
+
+
+def trace_code_sandboxed(code_string: str, max_steps: int = 50000, timeout: int = 30) -> Dict[str, Any]:
+    """
+    Execute trace_code in a sandboxed subprocess.
+
+    This isolates sys.settrace and sys.stdout changes from the main process,
+    preventing global state pollution in multi-threaded web servers.
+
+    Args:
+        code_string: Python code to trace
+        max_steps: Maximum trace steps
+        timeout: Execution timeout in seconds
+
+    Returns:
+        TraceResult dict with success/had_error fields
+    """
+    ctx = multiprocessing.get_context('spawn')
+    result_queue = ctx.Queue()
+    process = ctx.Process(target=_trace_worker, args=(code_string, max_steps, result_queue))
+
+    process.start()
+    process.join(timeout)
+
+    if process.is_alive():
+        process.kill()
+        process.join()
+        return {
+            'success': False,
+            'had_error': False,
+            'error': f'Execution timed out after {timeout} seconds',
+            'timed_out': True,
+            'steps': 0,
+            'trace': [],
+        }
+
+    if result_queue.empty():
+        return {
+            'success': False,
+            'had_error': False,
+            'error': 'Process terminated unexpectedly',
+            'steps': 0,
+            'trace': [],
+        }
+
+    return result_queue.get_nowait()

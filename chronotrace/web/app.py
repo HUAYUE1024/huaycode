@@ -21,8 +21,7 @@ root_dir = os.path.dirname(parent_dir)  # project root
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from chronotrace.core import trace_code
-from chronotrace.sandbox import validate_code_safety, execute_in_subprocess
+from chronotrace.sandbox import validate_code_safety, trace_code_sandboxed
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -265,7 +264,7 @@ def compare_executions():
 
 @app.route('/api/v1/run', methods=['POST'])
 def run_code():
-    """Execute code with tracing in sandboxed environment."""
+    """Execute code with tracing in sandboxed subprocess."""
     data = request.json
     if not data:
         return jsonify({'error': 'Invalid request', 'code': 400}), 400
@@ -277,7 +276,7 @@ def run_code():
     if len(code) > 50000:
         return jsonify({'error': 'Code exceeds maximum length (50000 chars)', 'code': 400}), 400
 
-    # Validate code safety
+    # Validate code safety first
     safety_error = validate_code_safety(code)
     if safety_error:
         return jsonify({
@@ -286,9 +285,16 @@ def run_code():
         }), 403
 
     try:
-        result = trace_code(code)
-        store.set_trace_data(result.to_dict())
-        return jsonify(result.to_dict())
+        # Execute in sandboxed subprocess - isolates sys.settrace/sys.stdout
+        result = trace_code_sandboxed(code, max_steps=50000, timeout=30)
+
+        if result.get('success') or result.get('had_error'):
+            store.set_trace_data(result)
+            return jsonify(result)
+        else:
+            error_msg = result.get('error', 'Unknown error')
+            return jsonify({'error': error_msg}), 500
+
     except Exception as e:
         import traceback
         traceback.print_exc()

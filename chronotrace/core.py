@@ -327,18 +327,24 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
         # Get collected data
         trace_data = context.trace_data
 
-        # Calculate memory deltas
+        # Calculate memory deltas (per-step for display)
         prev_memory = 0
         for step in trace_data:
             step['memory_delta'] = step['memory'] - prev_memory
             prev_memory = step['memory']
 
-        # Process memory hotspots
-        deltas = [(s['line_no'], s['memory_delta']) for s in trace_data if s['memory_delta'] > 0]
-        deltas.sort(key=lambda x: x[1], reverse=True)
-        result.hotspots = deltas[:5]
+        # Process memory hotspots - aggregate by line number
+        # This shows which lines caused the most memory allocation overall
+        line_memory: Dict[int, int] = {}
+        for step in trace_data:
+            line = step['line_no']
+            delta = step['memory_delta']
+            if delta > 0:
+                line_memory[line] = line_memory.get(line, 0) + delta
+        sorted_lines = sorted(line_memory.items(), key=lambda x: x[1], reverse=True)
+        result.hotspots = sorted_lines[:5]
 
-        # Process time hotspots
+        # Process time hotspots (already aggregated per line)
         time_hotspots_list = sorted(step_times.items(), key=lambda x: x[1], reverse=True)[:5]
         result.time_hotspots = [(line, t / 1_000_000_000.0) for line, t in time_hotspots_list]
 
@@ -371,7 +377,7 @@ def trace(func):
 
         # Start tracking
         tracemalloc.start()
-        start_time = time.perf_counter()
+        start_time = time.perf_counter_ns()
         previous_time = start_time
         step_times: Dict[int, int] = {}
 
@@ -401,10 +407,18 @@ def trace(func):
 
             if event == 'line':
                 timestamp = time.time()
-                current_perf = time.perf_counter()
+                current_perf = time.perf_counter_ns()
                 line_no = frame.f_lineno
-                exec_time_delta = current_perf - previous_time
+
+                # Calculate time delta in seconds
+                exec_time_delta_ns = max(1, current_perf - previous_time)
+                exec_time_delta = exec_time_delta_ns / 1_000_000_000.0
                 previous_time = current_perf
+
+                # Track time per line for hotspots
+                if line_no not in step_times:
+                    step_times[line_no] = 0
+                step_times[line_no] += exec_time_delta_ns
 
                 # Capture locals
                 locals_snapshot = {}
@@ -420,6 +434,8 @@ def trace(func):
                 current, peak = tracemalloc.get_traced_memory()
                 gc_counts = gc.get_count()
 
+                elapsed_seconds = (current_perf - start_time) / 1_000_000_000.0
+
                 context.add_trace_step({
                     'timestamp': timestamp,
                     'line_no': line_no,
@@ -432,7 +448,7 @@ def trace(func):
                     'filename': filename,
                     'call_stack': context.get_call_stack_copy(),
                     'exec_time_delta': exec_time_delta,
-                    'elapsed_time': current_perf - start_time
+                    'elapsed_time': elapsed_seconds
                 })
 
             return trace_func
@@ -450,27 +466,29 @@ def trace(func):
             error = e
             print(f"Exception during execution: {e}")
         finally:
-            end_time = time.perf_counter()
-            total_exec_time = end_time - start_time
+            end_time = time.perf_counter_ns()
+            total_exec_time = (end_time - start_time) / 1_000_000_000.0
 
             sys.stdout = original_stdout
             sys.settrace(None)
             tracemalloc.stop()
 
-            # Calculate hotspots
+            # Get trace data
             trace_data = context.trace_data
-            deltas = [(s['line_no'], s.get('memory_delta', 0)) for s in trace_data if s.get('memory_delta', 0) > 0]
-            deltas.sort(key=lambda x: x[1], reverse=True)
-            hotspots = deltas[:5]
 
-            # Time hotspots
-            time_hotspots = {}
+            # Calculate memory hotspots - aggregate by line number
+            line_memory: Dict[int, int] = {}
             for step in trace_data:
                 line = step['line_no']
-                t = step.get('exec_time_delta', 0)
-                if line not in time_hotspots or t > time_hotspots[line]:
-                    time_hotspots[line] = t
-            time_hotspots_list = sorted(time_hotspots.items(), key=lambda x: x[1], reverse=True)[:5]
+                delta = step.get('memory_delta', 0)
+                if delta > 0:
+                    line_memory[line] = line_memory.get(line, 0) + delta
+            sorted_lines = sorted(line_memory.items(), key=lambda x: x[1], reverse=True)
+            hotspots = sorted_lines[:5]
+
+            # Time hotspots - aggregate by line number
+            time_hotspots_list = sorted(step_times.items(), key=lambda x: x[1], reverse=True)[:5]
+            time_hotspots_seconds = [(line, t / 1_000_000_000.0) for line, t in time_hotspots_list]
 
             # Store trace data on the wrapper for later access
             wrapper.trace_data = {
@@ -479,7 +497,7 @@ def trace(func):
                 'trace': trace_data,
                 'output': context.captured_output,
                 'hotspots': hotspots,
-                'time_hotspots': time_hotspots_list,
+                'time_hotspots': time_hotspots_seconds,
                 'total_exec_time': total_exec_time
             }
 
