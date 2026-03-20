@@ -1,63 +1,121 @@
+"""
+ChronoTrace Web Application
+Flask-based web interface for code execution tracing.
+"""
 from flask import Flask, render_template, jsonify, send_from_directory, request
 import json
 import os
 import sys
 import time
+import platform
+import subprocess
+import threading
+from datetime import datetime
+from typing import Dict, List, Optional
 
 # Ensure we can import from parent directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir) # chronotrace
-root_dir = os.path.dirname(parent_dir) # E:\111
-sys.path.append(root_dir)
+parent_dir = os.path.dirname(current_dir)  # chronotrace
+root_dir = os.path.dirname(parent_dir)  # project root
+
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from chronotrace.core import trace_code
+from chronotrace.sandbox import validate_code_safety, execute_in_subprocess
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
-# API Version
-API_VERSION = 'v1'
 
-TRACE_DATA = {}
-EXECUTION_HISTORY = []
-MAX_HISTORY = 20
+class ExecutionStore:
+    """Thread-safe storage for execution history and trace data."""
+
+    def __init__(self, max_history: int = 20):
+        self._lock = threading.Lock()
+        self._trace_data: Optional[Dict] = None
+        self._history: List[Dict] = []
+        self._max_history = max_history
+
+    def set_trace_data(self, data: Dict):
+        with self._lock:
+            self._trace_data = data
+            if data and data.get('trace'):
+                peak_mem = max(
+                    [s.get('memory', 0) for s in data.get('trace', [])],
+                    default=0
+                )
+                source = data.get('source', [])
+                entry = {
+                    'id': len(self._history) + 1,
+                    'timestamp': time.time(),
+                    'steps': len(data.get('trace', [])),
+                    'source_preview': source[0][:60] if source else '',
+                    'peak_memory': peak_mem,
+                    'hotspots': data.get('hotspots', []),
+                    'data': data
+                }
+                self._history.append(entry)
+                if len(self._history) > self._max_history:
+                    self._history = self._history[-self._max_history:]
+
+    def get_trace_data(self) -> Optional[Dict]:
+        with self._lock:
+            return self._trace_data
+
+    def get_history(self) -> List[Dict]:
+        with self._lock:
+            return list(self._history)
+
+    def get_history_entry(self, entry_id: int) -> Optional[Dict]:
+        with self._lock:
+            for entry in self._history:
+                if entry['id'] == entry_id:
+                    return entry['data']
+            return None
+
+
+# Initialize store
+store = ExecutionStore()
+
+
+def get_git_info() -> Dict[str, str]:
+    """Get git repository information."""
+    info = {'branch': 'unknown', 'commit': 'unknown'}
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            capture_output=True, text=True, cwd=root_dir, timeout=5
+        )
+        if result.returncode == 0:
+            info['branch'] = result.stdout.strip()
+
+        result = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            capture_output=True, text=True, cwd=root_dir, timeout=5
+        )
+        if result.returncode == 0:
+            info['commit'] = result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return info
 
 
 @app.after_request
 def add_security_headers(response):
-    # Security headers
+    """Add security headers to all responses."""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    
-    # Cache static assets
+
     if '/static/' in request.path:
-        response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
-    
+        response.headers['Cache-Control'] = 'public, max-age=86400'
+
     return response
 
 
-def set_trace_data(data):
-    global TRACE_DATA, EXECUTION_HISTORY
-    TRACE_DATA = data
-    # Save to history
-    if data and data.get('trace'):
-        peak_mem = max([s.get('memory', 0) for s in data.get('trace', [])], default=0)
-        source = data.get('source', [])
-        entry = {
-            'id': len(EXECUTION_HISTORY) + 1,
-            'timestamp': time.time(),
-            'steps': len(data.get('trace', [])),
-            'source_preview': source[0][:60] if source else '',
-            'peak_memory': peak_mem,
-            'hotspots': data.get('hotspots', []),
-            'data': data
-        }
-        EXECUTION_HISTORY.append(entry)
-        # Keep only last MAX_HISTORY entries
-        if len(EXECUTION_HISTORY) > MAX_HISTORY:
-            EXECUTION_HISTORY = EXECUTION_HISTORY[-MAX_HISTORY:]
-
-
+# Page routes
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -93,30 +151,56 @@ def compare_view():
     return render_template('compare.html')
 
 
-@app.route('/api/status')
+@app.route('/favicon.ico')
+def favicon():
+    return "", 204
+
+
+# API v1 routes (canonical)
+@app.route('/api/v1/status')
 def get_status():
+    """Get server status with dynamic system information."""
+    git_info = get_git_info()
+
+    # Detect environment
+    env = 'local'
+    if os.environ.get('DOCKER'):
+        env = 'docker'
+    elif os.environ.get('WSL_DISTRO_NAME'):
+        env = f"WSL: {os.environ.get('WSL_DISTRO_NAME')}"
+    elif platform.system() == 'Linux':
+        env = 'linux'
+    elif platform.system() == 'Darwin':
+        env = 'macos'
+    elif platform.system() == 'Windows':
+        env = 'windows'
+
     return jsonify({
         'status': 'online',
-        'version': API_VERSION,
-        'env': 'WSL: Ubuntu',
-        'branch': 'main',
-        'python_version': '3.12.0',
-        'project': 'HUAYCODE'
+        'version': 'v1',
+        'env': env,
+        'branch': git_info['branch'],
+        'commit': git_info['commit'],
+        'python_version': platform.python_version(),
+        'platform': platform.platform(),
+        'project': 'ChronoTrace',
+        'timestamp': datetime.now().isoformat()
     })
 
 
 @app.route('/api/v1/trace')
-@app.route('/api/trace')
 def get_trace():
-    return jsonify(TRACE_DATA)
+    """Get current trace data."""
+    data = store.get_trace_data()
+    return jsonify(data or {})
 
 
 @app.route('/api/v1/history')
-@app.route('/api/history')
 def get_history():
-    # Return history without full data payload
+    """Get execution history summary."""
+    history = store.get_history()
     summary = []
-    for entry in EXECUTION_HISTORY:
+    for entry in history:
         summary.append({
             'id': entry['id'],
             'timestamp': entry['timestamp'],
@@ -128,59 +212,87 @@ def get_history():
     return jsonify(summary)
 
 
-@app.route('/api/history/<int:entry_id>')
+@app.route('/api/v1/history/<int:entry_id>')
 def get_history_entry(entry_id):
-    for entry in EXECUTION_HISTORY:
-        if entry['id'] == entry_id:
-            return jsonify(entry['data'])
+    """Get specific history entry with full data."""
+    data = store.get_history_entry(entry_id)
+    if data:
+        return jsonify(data)
     return jsonify({'error': 'Entry not found'}), 404
 
 
-@app.route('/api/compare', methods=['POST'])
+@app.route('/api/v1/compare', methods=['POST'])
 def compare_executions():
+    """Compare two execution traces."""
     data = request.json
+    if not data:
+        return jsonify({'error': 'Invalid request'}), 400
+
     id_a = data.get('id_a')
     id_b = data.get('id_b')
 
-    entry_a = None
-    entry_b = None
-
-    for entry in EXECUTION_HISTORY:
-        if entry['id'] == id_a:
-            entry_a = entry
-        if entry['id'] == id_b:
-            entry_b = entry
+    entry_a = store.get_history_entry(id_a)
+    entry_b = store.get_history_entry(id_b)
 
     if not entry_a or not entry_b:
         return jsonify({'error': 'One or both entries not found'}), 404
 
-    trace_a = entry_a['data'].get('trace', [])
-    trace_b = entry_b['data'].get('trace', [])
-    source_a = entry_a['data'].get('source', [])
-    source_b = entry_b['data'].get('source', [])
+    trace_a = entry_a.get('trace', [])
+    trace_b = entry_b.get('trace', [])
+    source_a = entry_a.get('source', [])
+    source_b = entry_b.get('source', [])
 
-    # Build comparison result
     result = {
         'execution_a': {
-            'id': entry_a['id'],
-            'timestamp': entry_a['timestamp'],
+            'id': id_a,
             'steps': len(trace_a),
             'source': source_a,
-            'peak_memory': entry_a['peak_memory'],
-            'hotspots': entry_a['data'].get('hotspots', [])
+            'peak_memory': max((s.get('memory', 0) for s in trace_a), default=0),
+            'hotspots': entry_a.get('hotspots', [])
         },
         'execution_b': {
-            'id': entry_b['id'],
-            'timestamp': entry_b['timestamp'],
+            'id': id_b,
             'steps': len(trace_b),
             'source': source_b,
-            'peak_memory': entry_b['peak_memory'],
-            'hotspots': entry_b['data'].get('hotspots', [])
+            'peak_memory': max((s.get('memory', 0) for s in trace_b), default=0),
+            'hotspots': entry_b.get('hotspots', [])
         },
         'diff': compute_diff(trace_a, trace_b, source_a, source_b)
     }
 
     return jsonify(result)
+
+
+@app.route('/api/v1/run', methods=['POST'])
+def run_code():
+    """Execute code with tracing in sandboxed environment."""
+    data = request.json
+    if not data:
+        return jsonify({'error': 'Invalid request', 'code': 400}), 400
+
+    code = data.get('code')
+    if not code:
+        return jsonify({'error': 'No code provided', 'code': 400}), 400
+
+    if len(code) > 50000:
+        return jsonify({'error': 'Code exceeds maximum length (50000 chars)', 'code': 400}), 400
+
+    # Validate code safety
+    safety_error = validate_code_safety(code)
+    if safety_error:
+        return jsonify({
+            'error': f'Security check failed: {safety_error}',
+            'code': 403
+        }), 403
+
+    try:
+        result = trace_code(code)
+        store.set_trace_data(result.to_dict())
+        return jsonify(result.to_dict())
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 def compute_diff(trace_a, trace_b, source_a, source_b):
@@ -208,12 +320,8 @@ def compute_diff(trace_a, trace_b, source_a, source_b):
     }
 
     # Line coverage comparison
-    lines_a = set()
-    lines_b = set()
-    for step in trace_a:
-        lines_a.add(step.get('line_no'))
-    for step in trace_b:
-        lines_b.add(step.get('line_no'))
+    lines_a = set(s.get('line_no') for s in trace_a)
+    lines_b = set(s.get('line_no') for s in trace_b)
 
     diff_result['line_coverage'] = {
         'lines_a': sorted(list(lines_a)),
@@ -223,7 +331,7 @@ def compute_diff(trace_a, trace_b, source_a, source_b):
         'common': sorted(list(lines_a & lines_b))
     }
 
-    # Execution path comparison (sequence of line numbers)
+    # Execution path comparison
     path_a = [s.get('line_no') for s in trace_a]
     path_b = [s.get('line_no') for s in trace_b]
     diff_result['execution_path_diff'] = compare_paths(path_a, path_b)
@@ -284,61 +392,24 @@ def compare_paths(path_a, path_b):
     return result
 
 
+# Legacy API routes (deprecated, redirect to v1)
+@app.route('/api/trace')
+def legacy_get_trace():
+    return get_trace()
+
+
+@app.route('/api/history')
+def legacy_get_history():
+    return get_history()
+
+
 @app.route('/api/run', methods=['POST'])
-def run_code():
-    data = request.json
-    if not data:
-        return jsonify({'error': '无效请求', 'code': 400}), 400
-    
-    code = data.get('code')
-    if not code:
-        return jsonify({'error': '未提供代码', 'code': 400}), 400
-    
-    if len(code) > 50000:
-        return jsonify({'error': '代码长度超过限制 (最大 50000 字符)', 'code': 400}), 400
-
-    try:
-        # Dynamic import to handle path issues
-        import sys
-        if root_dir not in sys.path:
-            sys.path.append(root_dir)
-
-        # Import core module directly from file path if package import fails
-        try:
-            from chronotrace.core import trace_code
-        except ImportError:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("chronotrace.core", os.path.join(parent_dir, "core.py"))
-            core = importlib.util.module_from_spec(spec)
-            sys.modules["chronotrace.core"] = core
-            spec.loader.exec_module(core)
-            trace_code = core.trace_code
-
-        result = trace_code(code)
-        set_trace_data(result)
-        
-        # Debug: print timing info
-        if result.get('trace') and len(result['trace']) > 0:
-            first_step = result['trace'][0]
-            last_step = result['trace'][-1]
-            
-            # Check if timing data exists and has valid values
-            elapsed_first = first_step.get('elapsed_time', 'MISSING')
-            elapsed_last = last_step.get('elapsed_time', 'MISSING')
-        
-        return jsonify(result)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/favicon.ico')
-def favicon():
-    return "", 204
+def legacy_run_code():
+    return run_code()
 
 
 def start_server(port=5000):
+    """Start the Flask development server."""
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     app.run(debug=debug_mode, use_reloader=False, port=port)
 
