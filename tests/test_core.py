@@ -182,10 +182,11 @@ z = x / y
 """
         result = trace_code(code)
 
-        # Should capture the error but still return trace
+        # Trace completed successfully, but user code had error
         self.assertTrue(result.success)
-        error_outputs = [o for o in result.output if 'Error' in str(o.get('content', ''))]
-        self.assertGreater(len(error_outputs), 0)
+        self.assertTrue(result.had_error)
+        self.assertIsNotNone(result.error)
+        self.assertIn('division', result.error.lower())
 
     def test_memory_tracking(self):
         """Test memory tracking"""

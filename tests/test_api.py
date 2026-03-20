@@ -282,6 +282,92 @@ result = factorial(5)
         )
         self.assertEqual(response.status_code, 200)
 
+    def test_allow_pathlib(self):
+        """Allow pathlib for teaching purposes"""
+        code = """
+from pathlib import Path
+p = Path('.')
+"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': code},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_allow_math(self):
+        """Allow math module"""
+        code = """
+import math
+x = math.sqrt(16)
+y = math.pi
+"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': code},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_allow_json(self):
+        """Allow json module"""
+        code = """
+import json
+data = json.loads('{"a": 1}')
+"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': code},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_allow_collections(self):
+        """Allow collections module"""
+        code = """
+from collections import Counter, defaultdict
+c = Counter([1, 2, 2, 3])
+"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': code},
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class TestTraceErrorHandling(unittest.TestCase):
+    """Test trace error handling returns correct success/had_error"""
+
+    def setUp(self):
+        app.config['TESTING'] = True
+        self.client = app.test_client()
+
+    def test_normal_code_success_true_had_error_false(self):
+        """Normal code: success=True, had_error=False"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': 'x = 1 + 2'},
+            content_type='application/json'
+        )
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])
+        self.assertFalse(data['had_error'])
+        self.assertIsNone(data.get('error'))
+
+    def test_error_code_success_true_had_error_true(self):
+        """Error code: success=True (trace worked), had_error=True"""
+        response = self.client.post(
+            '/api/v1/run',
+            json={'code': 'x = 1 / 0'},
+            content_type='application/json'
+        )
+        data = json.loads(response.data)
+        self.assertTrue(data['success'])      # Trace completed
+        self.assertTrue(data['had_error'])     # User code had error
+        self.assertIsNotNone(data.get('error'))
+        self.assertIn('division', data['error'].lower())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

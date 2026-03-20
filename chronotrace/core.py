@@ -33,7 +33,8 @@ class TraceStep:
 @dataclass
 class TraceResult:
     """Complete trace result."""
-    success: bool = True
+    success: bool = True          # Trace itself completed without error
+    had_error: bool = False       # User code raised an exception
     steps: int = 0
     source: List[str] = field(default_factory=list)
     start_line: int = 1
@@ -47,6 +48,7 @@ class TraceResult:
     def to_dict(self) -> Dict:
         return {
             'success': self.success,
+            'had_error': self.had_error,
             'steps': self.steps,
             'source': self.source,
             'start_line': self.start_line,
@@ -305,12 +307,14 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
     try:
         exec(code_string, {'__name__': '__main__'})
         result.success = True
+        result.had_error = False
     except Exception as e:
-        result.success = True  # Still return trace even with errors
-        error_msg = str(e)
+        result.success = True       # Trace completed, data is still valid
+        result.had_error = True     # But user code had an error
+        result.error = str(e)
         context.add_output({
             'timestamp': time.time(),
-            'content': f"\nError: {error_msg}"
+            'content': f"\nError: {str(e)}"
         })
     finally:
         end_time = time.perf_counter_ns()
