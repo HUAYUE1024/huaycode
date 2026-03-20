@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function fetchTraceData() {
-        return fetch('/api/trace')
+        return fetch('/api/v1/trace')
             .then(response => {
                 if (!response.ok) throw new Error('Network response was not ok');
                 return response.json();
@@ -177,35 +177,49 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateState(stepIndex) {
-        stepIndex = parseInt(stepIndex);
-        if (isNaN(stepIndex) || stepIndex < 0 || stepIndex >= state.traceData.length) return;
-        
-        const prevStepIndex = state.currentStep;
-        state.currentStep = stepIndex;
-        
-        // Update Controls
-        dom.timelineSlider.value = stepIndex;
-        dom.currentStepDisplay.textContent = stepIndex;
-        
-        const step = state.traceData[stepIndex];
-        const prevStep = stepIndex > 0 ? state.traceData[stepIndex - 1] : null;
-        
-        // Batch DOM updates
-        requestAnimationFrame(() => {
-            highlightLine(step.line_no);
-            renderVariables(step.locals, prevStep ? prevStep.locals : {});
-            renderStepInsight(step, prevStep);
-            updateConsole(step.timestamp);
-            renderCallStack(step.call_stack || []);
-            updateStats(step);
+        try {
+            stepIndex = parseInt(stepIndex);
+            if (isNaN(stepIndex) || stepIndex < 0 || stepIndex >= state.traceData.length) return;
             
-            if (dom.currentLineBadge) {
-                dom.currentLineBadge.textContent = `${step.line_no}`;
+            const prevStepIndex = state.currentStep;
+            state.currentStep = stepIndex;
+            
+            // Update Controls
+            dom.timelineSlider.value = stepIndex;
+            dom.currentStepDisplay.textContent = stepIndex;
+            
+            const step = state.traceData[stepIndex];
+            if (!step) {
+                console.warn('Step not found at index:', stepIndex);
+                return;
             }
-            if (dom.timeDisplay) {
-                dom.timeDisplay.textContent = new Date(step.timestamp * 1000).toISOString().substr(14, 9);
-            }
-        });
+            
+            const prevStep = stepIndex > 0 ? state.traceData[stepIndex - 1] : null;
+            
+            // Batch DOM updates
+            requestAnimationFrame(() => {
+                try {
+                    highlightLine(step.line_no);
+                    renderVariables(step.locals, prevStep ? prevStep.locals : {});
+                    renderStepInsight(step, prevStep);
+                    updateConsole(step.timestamp);
+                    renderCallStack(step.call_stack || []);
+                    updateStats(step);
+                    
+                    if (dom.currentLineBadge) {
+                        dom.currentLineBadge.textContent = `${step.line_no}`;
+                    }
+                    if (dom.timeDisplay && step.timestamp) {
+                        dom.timeDisplay.textContent = new Date(step.timestamp * 1000).toISOString().substr(14, 9);
+                    }
+                } catch (e) {
+                    console.error('Error in render frame:', e);
+                }
+            });
+        } catch (e) {
+            console.error('Error updating state:', e);
+            updateStatus('Render Error', 'text-danger');
+        }
     }
 
     function updateStats(step) {
@@ -316,9 +330,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const scrollContainer = document.querySelector('.code-container');
         if (!scrollContainer || !dom.codeDisplay || !dom.lineHighlight) return;
 
-        // Calculate position (Assuming 1.6 line-height and 13px font size => ~20.8px)
-        // Better to measure
-        const lineHeight = 20.8; 
+        // Calculate position - dynamically measure line height
+        const codeElement = dom.codeDisplay;
+        const computedStyle = window.getComputedStyle(codeElement);
+        const lineHeight = parseFloat(computedStyle.lineHeight) || 
+                          (parseFloat(computedStyle.fontSize) * 1.6) || 20.8;
         const top = (relativeLine * lineHeight);
         
         // Apply styles
