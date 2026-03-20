@@ -117,12 +117,6 @@ get_user_input() {
     read -p "请输入 SSH 用户名 [默认: root]:" SSH_USER
     SSH_USER=${SSH_USER:-root}
     
-    # SSH 密码 (如果使用密码认证)
-    if [ "$SSH_USER" != "root" ]; then
-        read -s -p "请输入 SSH 密码:" SSH_PASSWORD
-        echo
-    fi
-    
     # 应用端口
     read -p "请输入应用访问端口 [默认: 80]:" APP_PORT
     APP_PORT=${APP_PORT:-80}
@@ -233,9 +227,14 @@ EOF
 upload_to_server() {
     print_step "上传文件到服务器"
     
+    # 首次连接添加 host key
+    print_info "检查 SSH host key..."
+    ssh-keyscan -p $SSH_PORT $SERVER_IP >> ~/.ssh/known_hosts 2>/dev/null || true
+    
     # 检查 SSH 连接
-    if ! ssh -p $SSH_PORT -o ConnectTimeout=10 -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP "echo 'SSH 连接成功'" &> /dev/null; then
+    if ! ssh -p $SSH_PORT -o ConnectTimeout=10 $SSH_USER@$SERVER_IP "echo 'SSH 连接成功'" &> /dev/null; then
         print_error "无法连接到服务器 $SERVER_IP:$SSH_PORT"
+        print_info "请确保: 1) SSH 密钥已配置 2) 服务器允许 $SSH_USER 登录"
         exit 1
     fi
     print_success "SSH 连接测试成功"
