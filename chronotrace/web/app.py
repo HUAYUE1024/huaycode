@@ -8,7 +8,6 @@ import os
 import sys
 import time
 import platform
-import subprocess
 import threading
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -77,27 +76,17 @@ class ExecutionStore:
 # Initialize store
 store = ExecutionStore()
 
+# Version info - injected at build time via environment variables
+# Set CHRONOTRACE_GIT_BRANCH and CHRONOTRACE_GIT_COMMIT before starting
+VERSION_INFO = {
+    'branch': os.environ.get('CHRONOTRACE_GIT_BRANCH', 'unknown'),
+    'commit': os.environ.get('CHRONOTRACE_GIT_COMMIT', 'unknown'),
+}
 
-def get_git_info() -> Dict[str, str]:
-    """Get git repository information."""
-    info = {'branch': 'unknown', 'commit': 'unknown'}
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-            capture_output=True, text=True, cwd=root_dir, timeout=5
-        )
-        if result.returncode == 0:
-            info['branch'] = result.stdout.strip()
 
-        result = subprocess.run(
-            ['git', 'rev-parse', '--short', 'HEAD'],
-            capture_output=True, text=True, cwd=root_dir, timeout=5
-        )
-        if result.returncode == 0:
-            info['commit'] = result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        pass
-    return info
+def get_version_info() -> Dict[str, str]:
+    """Get version info from environment (injected at build time)."""
+    return VERSION_INFO.copy()
 
 
 @app.after_request
@@ -159,7 +148,7 @@ def favicon():
 @app.route('/api/v1/status')
 def get_status():
     """Get server status with dynamic system information."""
-    git_info = get_git_info()
+    version_info = get_version_info()
 
     # Detect environment
     env = 'local'
@@ -178,8 +167,8 @@ def get_status():
         'status': 'online',
         'version': 'v1',
         'env': env,
-        'branch': git_info['branch'],
-        'commit': git_info['commit'],
+        'branch': version_info['branch'],
+        'commit': version_info['commit'],
         'python_version': platform.python_version(),
         'platform': platform.platform(),
         'project': 'ChronoTrace',

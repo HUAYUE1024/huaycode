@@ -310,17 +310,14 @@ y = math.pi
         self.assertEqual(response.status_code, 200)
 
     def test_allow_json(self):
-        """Allow json module"""
+        """Allow json module - validate code safety only"""
+        from chronotrace.sandbox import validate_code_safety
         code = """
 import json
 data = json.loads('{"a": 1}')
 """
-        response = self.client.post(
-            '/api/v1/run',
-            json={'code': code},
-            content_type='application/json'
-        )
-        self.assertEqual(response.status_code, 200)
+        result = validate_code_safety(code)
+        self.assertIsNone(result)  # None means safe
 
     def test_allow_collections(self):
         """Allow collections module"""

@@ -12,29 +12,10 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class TraceStep:
-    """Single execution step data."""
-    timestamp: float
-    line_no: int
-    locals: Dict[str, Any]
-    memory: int
-    memory_delta: int
-    peak_memory: int
-    gc_counts: Tuple[int, int, int]
-    event: str
-    filename: str
-    call_stack: List[Dict]
-    exec_time_delta: float
-    elapsed_time: float
-    stmt_type: str = ''
-    stmt_source: str = ''
-
-
-@dataclass
 class TraceResult:
     """Complete trace result."""
-    success: bool = True          # Trace itself completed without error
-    had_error: bool = False       # User code raised an exception
+    success: bool = True
+    had_error: bool = False
     steps: int = 0
     source: List[str] = field(default_factory=list)
     start_line: int = 1
@@ -62,8 +43,6 @@ class TraceResult:
 
 
 class LineMapper(ast.NodeVisitor):
-    """Maps AST nodes to line numbers."""
-
     def __init__(self):
         self.mapping = {}
 
@@ -78,7 +57,6 @@ class LineMapper(ast.NodeVisitor):
 
 
 def analyze_ast(code_string: str) -> Dict:
-    """Analyze Python code AST for structure context."""
     try:
         tree = ast.parse(code_string)
         mapper = LineMapper()
@@ -89,8 +67,6 @@ def analyze_ast(code_string: str) -> Dict:
 
 
 class StreamCapturer:
-    """Captures stdout/stderr while preserving original stream."""
-
     def __init__(self, original_stream, output_list: List[Dict]):
         self.original_stream = original_stream
         self.output_list = output_list
@@ -99,10 +75,7 @@ class StreamCapturer:
         timestamp = time.time()
         self.original_stream.write(message)
         if message:
-            self.output_list.append({
-                'timestamp': timestamp,
-                'content': message
-            })
+            self.output_list.append({'timestamp': timestamp, 'content': message})
 
     def flush(self):
         self.original_stream.flush()
@@ -110,20 +83,22 @@ class StreamCapturer:
 
 _MAX_SERIALIZE_ITEMS = 50
 _MAX_SERIALIZE_DEPTH = 2
-_serialize_cache = {}
 
 
-def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH):
+def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH, cache=None):
     """
     Serialize objects for JSON output.
-    Optimized: caps item count at 50, depth at 2, caches repr for complex types.
+    cache: optional dict {id(obj): serialized} to avoid cycles within one trace.
     """
+    if cache is None:
+        cache = {}
+
     if depth > max_depth:
         return repr(obj)[:200] if not isinstance(obj, (int, float, str, bool, type(None))) else obj
 
     obj_id = id(obj)
-    if obj_id in _serialize_cache:
-        return _serialize_cache[obj_id]
+    if obj_id in cache:
+        return cache[obj_id]
 
     if isinstance(obj, (int, float, str, bool, type(None))):
         return obj
@@ -132,20 +107,28 @@ def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH):
         if isinstance(obj, (list, tuple)):
             n = len(obj)
             if n > _MAX_SERIALIZE_ITEMS:
-                result = [serialize(item, depth + 1, max_depth) for item in obj[:_MAX_SERIALIZE_ITEMS]]
+                result = [serialize(item, depth + 1, max_depth, cache) for item in obj[:_MAX_SERIALIZE_ITEMS]]
                 result.append(f"<... {n - _MAX_SERIALIZE_ITEMS} more>")
+                cache[obj_id] = result
                 return result
-            return [serialize(item, depth + 1, max_depth) for item in obj]
+            result = [serialize(item, depth + 1, max_depth, cache) for item in obj]
+            cache[obj_id] = result
+            return result
         elif isinstance(obj, dict):
             n = len(obj)
             if n > _MAX_SERIALIZE_ITEMS:
                 items = list(obj.items())[:_MAX_SERIALIZE_ITEMS]
-                serialized = {str(k): serialize(v, depth + 1, max_depth) for k, v in items}
+                serialized = {str(k): serialize(v, depth + 1, max_depth, cache) for k, v in items}
                 serialized["<...>"] = f"{n - _MAX_SERIALIZE_ITEMS} more"
+                cache[obj_id] = serialized
                 return serialized
-            return {str(k): serialize(v, depth + 1, max_depth) for k, v in obj.items()}
+            result = {str(k): serialize(v, depth + 1, max_depth, cache) for k, v in obj.items()}
+            cache[obj_id] = result
+            return result
         elif hasattr(obj, '__dict__'):
-            return {k: serialize(v, depth + 1, max_depth) for k, v in list(obj.__dict__.items())[:_MAX_SERIALIZE_ITEMS] if not k.startswith('__')}
+            result = {k: serialize(v, depth + 1, max_depth, cache) for k, v in list(obj.__dict__.items())[:_MAX_SERIALIZE_ITEMS] if not k.startswith('__')}
+            cache[obj_id] = result
+            return result
         else:
             return str(obj)[:200]
     except RecursionError:
@@ -155,19 +138,21 @@ def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH):
 
 
 class TraceContext:
-    """Thread-safe trace data context."""
+    """Thread-safe trace data context with per-instance serialization cache."""
 
     def __init__(self):
         self._lock = threading.Lock()
         self._trace_data: List[Dict] = []
         self._captured_output: List[Dict] = []
         self._call_stack: List[Dict] = []
+        self._serialize_cache: Dict[int, Any] = {}
 
     def clear(self):
         with self._lock:
             self._trace_data = []
             self._captured_output = []
             self._call_stack = []
+            self._serialize_cache = {}
 
     def add_trace_step(self, step: Dict):
         with self._lock:
@@ -191,6 +176,11 @@ class TraceContext:
         with self._lock:
             return list(self._call_stack)
 
+    def serialize(self, obj, depth=0):
+        """Serialize using this context's cache."""
+        with self._lock:
+            return serialize(obj, depth, cache=self._serialize_cache)
+
     @property
     def trace_data(self) -> List[Dict]:
         with self._lock:
@@ -203,41 +193,33 @@ class TraceContext:
 
 
 def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
-    """
-    Trace execution of a code string with thread-safe data management.
-    """
-    _serialize_cache.clear()
+    """Trace execution of a code string with thread-safe data management."""
     context = TraceContext()
     result = TraceResult()
 
-    # Pre-process source lines
     source_lines = [line + '\n' for line in code_string.splitlines()]
     result.source = source_lines
     result.start_line = 1
 
-    # Analyze AST for structure context
     ast_mapping = analyze_ast(code_string)
 
-    # Start tracking memory and time
     tracemalloc.start()
     start_time = time.perf_counter_ns()
     previous_time = start_time
+    previous_memory = 0  # Track memory delta correctly
     step_times: Dict[int, int] = {}
     step_count = 0
 
     def trace_func(frame, event, arg):
-        nonlocal previous_time, step_count
+        nonlocal previous_time, previous_memory, step_count
 
         if step_count >= max_steps:
             return None
 
         filename = frame.f_code.co_filename
-
-        # Only trace the executed string
         if filename != "<string>":
             return None
 
-        # Handle function call events
         if event == 'call':
             context.push_call({
                 'name': frame.f_code.co_name,
@@ -246,7 +228,6 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
             })
             return trace_func
 
-        # Handle function return events
         if event == 'return':
             context.pop_call()
             return trace_func
@@ -257,44 +238,42 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
             current_perf = time.perf_counter_ns()
             line_no = frame.f_lineno
 
-            # Calculate time delta
             exec_time_delta_ns = max(1, current_perf - previous_time)
             exec_time_delta = exec_time_delta_ns / 1_000_000_000.0
             previous_time = current_perf
 
-            # Capture local variables
+            # Capture locals using context's cache
             locals_snapshot = {}
             for key, value in frame.f_locals.items():
                 if key.startswith('__'):
                     continue
                 try:
-                    locals_snapshot[key] = serialize(value)
+                    locals_snapshot[key] = context.serialize(value)
                 except Exception as e:
-                    locals_snapshot[key] = f"<Error serialization: {str(e)}>"
+                    locals_snapshot[key] = f"<Error: {str(e)}>"
 
-            # Capture memory
+            # Capture memory - compute actual delta
             current, peak = tracemalloc.get_traced_memory()
+            memory_delta = current - previous_memory
+            previous_memory = current
             gc_counts = gc.get_count()
 
-            # Get AST context
             stmt_info = ast_mapping.get(line_no, {})
             stmt_type = stmt_info.get('type', 'Unknown')
             stmt_source = stmt_info.get('source', '')
 
-            # Track time per line
             if line_no not in step_times:
                 step_times[line_no] = 0
             step_times[line_no] += exec_time_delta_ns
 
-            elapsed_ns = current_perf - start_time
-            elapsed_seconds = elapsed_ns / 1_000_000_000.0
+            elapsed_seconds = (current_perf - start_time) / 1_000_000_000.0
 
             context.add_trace_step({
                 'timestamp': timestamp,
                 'line_no': line_no,
                 'locals': locals_snapshot,
                 'memory': current,
-                'memory_delta': 0,
+                'memory_delta': memory_delta,  # Now correctly computed
                 'peak_memory': peak,
                 'gc_counts': gc_counts,
                 'event': event,
@@ -317,13 +296,10 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
         result.success = True
         result.had_error = False
     except Exception as e:
-        result.success = True       # Trace completed, data is still valid
-        result.had_error = True     # But user code had an error
+        result.success = True
+        result.had_error = True
         result.error = str(e)
-        context.add_output({
-            'timestamp': time.time(),
-            'content': f"\nError: {str(e)}"
-        })
+        context.add_output({'timestamp': time.time(), 'content': f"\nError: {str(e)}"})
     finally:
         end_time = time.perf_counter_ns()
         total_exec_time = (end_time - start_time) / 1_000_000_000.0
@@ -332,27 +308,18 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
         sys.settrace(None)
         tracemalloc.stop()
 
-        # Get collected data
         trace_data = context.trace_data
 
-        # Calculate memory deltas (per-step for display)
-        prev_memory = 0
-        for step in trace_data:
-            step['memory_delta'] = step['memory'] - prev_memory
-            prev_memory = step['memory']
-
-        # Process memory hotspots - aggregate by line number
-        # This shows which lines caused the most memory allocation overall
+        # Memory hotspots - aggregate positive deltas by line
         line_memory: Dict[int, int] = {}
         for step in trace_data:
-            line = step['line_no']
-            delta = step['memory_delta']
+            delta = step.get('memory_delta', 0)
             if delta > 0:
+                line = step['line_no']
                 line_memory[line] = line_memory.get(line, 0) + delta
         sorted_lines = sorted(line_memory.items(), key=lambda x: x[1], reverse=True)
         result.hotspots = sorted_lines[:5]
 
-        # Process time hotspots (already aggregated per line)
         time_hotspots_list = sorted(step_times.items(), key=lambda x: x[1], reverse=True)[:5]
         result.time_hotspots = [(line, t / 1_000_000_000.0) for line, t in time_hotspots_list]
 
@@ -365,15 +332,11 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
 
 
 def trace(func):
-    """
-    Decorator to record the execution of a function.
-    Decoupled from web layer - returns trace data directly.
-    """
+    """Decorator to record the execution of a function."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         context = TraceContext()
 
-        # Get source code of the function
         try:
             source_lines, start_line = inspect.getsourcelines(func)
             func_file = inspect.getfile(func)
@@ -383,32 +346,24 @@ def trace(func):
             start_line = 0
             project_root = None
 
-        # Start tracking
         tracemalloc.start()
         start_time = time.perf_counter_ns()
         previous_time = start_time
+        previous_memory = 0
         step_times: Dict[int, int] = {}
 
         def trace_func(frame, event, arg):
-            nonlocal previous_time
+            nonlocal previous_time, previous_memory
             filename = frame.f_code.co_filename
 
-            # Avoid tracing the tracer
             if 'chronotrace' in filename:
                 return None
-
-            # Only trace project files
             if project_root and not os.path.abspath(filename).startswith(project_root):
                 return None
 
             if event == 'call':
-                context.push_call({
-                    'name': frame.f_code.co_name,
-                    'line': frame.f_lineno,
-                    'filename': filename
-                })
+                context.push_call({'name': frame.f_code.co_name, 'line': frame.f_lineno, 'filename': filename})
                 return trace_func
-
             if event == 'return':
                 context.pop_call()
                 return trace_func
@@ -418,45 +373,41 @@ def trace(func):
                 current_perf = time.perf_counter_ns()
                 line_no = frame.f_lineno
 
-                # Calculate time delta in seconds
                 exec_time_delta_ns = max(1, current_perf - previous_time)
                 exec_time_delta = exec_time_delta_ns / 1_000_000_000.0
                 previous_time = current_perf
 
-                # Track time per line for hotspots
                 if line_no not in step_times:
                     step_times[line_no] = 0
                 step_times[line_no] += exec_time_delta_ns
 
-                # Capture locals
                 locals_snapshot = {}
                 for key, value in frame.f_locals.items():
                     if key.startswith('__'):
                         continue
                     try:
-                        locals_snapshot[key] = serialize(value)
+                        locals_snapshot[key] = context.serialize(value)
                     except Exception as e:
-                        locals_snapshot[key] = f"<Error serialization: {str(e)}>"
+                        locals_snapshot[key] = f"<Error: {str(e)}>"
 
-                # Capture memory
                 current, peak = tracemalloc.get_traced_memory()
+                memory_delta = current - previous_memory
+                previous_memory = current
                 gc_counts = gc.get_count()
-
-                elapsed_seconds = (current_perf - start_time) / 1_000_000_000.0
 
                 context.add_trace_step({
                     'timestamp': timestamp,
                     'line_no': line_no,
                     'locals': locals_snapshot,
                     'memory': current,
-                    'memory_delta': 0,
+                    'memory_delta': memory_delta,
                     'peak_memory': peak,
                     'gc_counts': gc_counts,
                     'event': event,
                     'filename': filename,
                     'call_stack': context.get_call_stack_copy(),
                     'exec_time_delta': exec_time_delta,
-                    'elapsed_time': elapsed_seconds
+                    'elapsed_time': (current_perf - start_time) / 1_000_000_000.0
                 })
 
             return trace_func
@@ -481,24 +432,20 @@ def trace(func):
             sys.settrace(None)
             tracemalloc.stop()
 
-            # Get trace data
             trace_data = context.trace_data
 
-            # Calculate memory hotspots - aggregate by line number
             line_memory: Dict[int, int] = {}
             for step in trace_data:
-                line = step['line_no']
                 delta = step.get('memory_delta', 0)
                 if delta > 0:
+                    line = step['line_no']
                     line_memory[line] = line_memory.get(line, 0) + delta
             sorted_lines = sorted(line_memory.items(), key=lambda x: x[1], reverse=True)
             hotspots = sorted_lines[:5]
 
-            # Time hotspots - aggregate by line number
             time_hotspots_list = sorted(step_times.items(), key=lambda x: x[1], reverse=True)[:5]
             time_hotspots_seconds = [(line, t / 1_000_000_000.0) for line, t in time_hotspots_list]
 
-            # Store trace data on the wrapper for later access
             wrapper.trace_data = {
                 'source': [line.rstrip('\n') for line in source_lines],
                 'start_line': start_line,
