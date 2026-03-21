@@ -84,6 +84,8 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         '__subclasses__', '__bases__', '__mro__',
         '__globals__', '__code__', '__builtins__',
         '__import__', '__loader__', '__class__',
+        '__getattribute__', '__setattr__', '__delattr__',
+        '__init_subclass__', '__setitem__', '__getitem__',
     }
 
     for node in ast.walk(tree):
@@ -216,8 +218,7 @@ def _trace_worker(code: str, steps: int, result_queue):
     try:
         import os
 
-        _apply_resource_limits()
-
+        # Validate FIRST, then apply limits
         error = validate_code_safety(code)
         if error:
             result_queue.put({
@@ -227,6 +228,8 @@ def _trace_worker(code: str, steps: int, result_queue):
                 'hotspots': [], 'time_hotspots': [], 'total_exec_time': 0,
             })
             return
+
+        _apply_resource_limits()
 
         sandbox_dir = os.path.dirname(os.path.abspath(__file__))
         project_dir = os.path.dirname(sandbox_dir)

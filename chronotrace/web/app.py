@@ -256,21 +256,21 @@ def run_code():
     """Execute code with tracing in sandboxed subprocess."""
     data = request.json
     if not data:
-        return jsonify({'error': 'Invalid request', 'code': 400}), 400
+        return jsonify({'success': False, 'error': 'Invalid request'}), 400
 
     code = data.get('code')
     if not code:
-        return jsonify({'error': 'No code provided', 'code': 400}), 400
+        return jsonify({'success': False, 'error': 'No code provided'}), 400
 
     if len(code) > 50000:
-        return jsonify({'error': 'Code exceeds maximum length (50000 chars)', 'code': 400}), 400
+        return jsonify({'success': False, 'error': 'Code exceeds maximum length (50000 chars)'}), 400
 
     # Validate code safety first
     safety_error = validate_code_safety(code)
     if safety_error:
         return jsonify({
-            'error': f'Security check failed: {safety_error}',
-            'code': 403
+            'success': False,
+            'error': f'Security check failed: {safety_error}'
         }), 403
 
     try:

@@ -85,56 +85,52 @@ _MAX_SERIALIZE_ITEMS = 50
 _MAX_SERIALIZE_DEPTH = 2
 
 
-def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH, cache=None):
+def serialize(obj, depth=0, max_depth=_MAX_SERIALIZE_DEPTH, seen=None):
     """
     Serialize objects for JSON output.
-    cache: optional dict {id(obj): serialized} to avoid cycles within one trace.
+    seen: set of object ids to detect circular references (not id reuse).
     """
-    if cache is None:
-        cache = {}
+    if seen is None:
+        seen = set()
 
     if depth > max_depth:
         return repr(obj)[:200] if not isinstance(obj, (int, float, str, bool, type(None))) else obj
 
-    obj_id = id(obj)
-    if obj_id in cache:
-        return cache[obj_id]
-
+    # Primitives don't need cycle detection
     if isinstance(obj, (int, float, str, bool, type(None))):
         return obj
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return "<Circular reference>"
+    seen.add(obj_id)
 
     try:
         if isinstance(obj, (list, tuple)):
             n = len(obj)
             if n > _MAX_SERIALIZE_ITEMS:
-                result = [serialize(item, depth + 1, max_depth, cache) for item in obj[:_MAX_SERIALIZE_ITEMS]]
+                result = [serialize(item, depth + 1, max_depth, seen) for item in obj[:_MAX_SERIALIZE_ITEMS]]
                 result.append(f"<... {n - _MAX_SERIALIZE_ITEMS} more>")
-                cache[obj_id] = result
                 return result
-            result = [serialize(item, depth + 1, max_depth, cache) for item in obj]
-            cache[obj_id] = result
-            return result
+            return [serialize(item, depth + 1, max_depth, seen) for item in obj]
         elif isinstance(obj, dict):
             n = len(obj)
             if n > _MAX_SERIALIZE_ITEMS:
                 items = list(obj.items())[:_MAX_SERIALIZE_ITEMS]
-                serialized = {str(k): serialize(v, depth + 1, max_depth, cache) for k, v in items}
+                serialized = {str(k): serialize(v, depth + 1, max_depth, seen) for k, v in items}
                 serialized["<...>"] = f"{n - _MAX_SERIALIZE_ITEMS} more"
-                cache[obj_id] = serialized
                 return serialized
-            result = {str(k): serialize(v, depth + 1, max_depth, cache) for k, v in obj.items()}
-            cache[obj_id] = result
-            return result
+            return {str(k): serialize(v, depth + 1, max_depth, seen) for k, v in obj.items()}
         elif hasattr(obj, '__dict__'):
-            result = {k: serialize(v, depth + 1, max_depth, cache) for k, v in list(obj.__dict__.items())[:_MAX_SERIALIZE_ITEMS] if not k.startswith('__')}
-            cache[obj_id] = result
-            return result
+            return {k: serialize(v, depth + 1, max_depth, seen) for k, v in list(obj.__dict__.items())[:_MAX_SERIALIZE_ITEMS] if not k.startswith('__')}
         else:
             return str(obj)[:200]
     except RecursionError:
         return "<Recursion detected>"
     except Exception:
         return "<Serialization error>"
+    finally:
+        seen.discard(obj_id)
 
 
 class TraceContext:
@@ -145,14 +141,12 @@ class TraceContext:
         self._trace_data: List[Dict] = []
         self._captured_output: List[Dict] = []
         self._call_stack: List[Dict] = []
-        self._serialize_cache: Dict[int, Any] = {}
 
     def clear(self):
         with self._lock:
             self._trace_data = []
             self._captured_output = []
             self._call_stack = []
-            self._serialize_cache = {}
 
     def add_trace_step(self, step: Dict):
         with self._lock:
@@ -177,9 +171,8 @@ class TraceContext:
             return list(self._call_stack)
 
     def serialize(self, obj, depth=0):
-        """Serialize using this context's cache."""
-        with self._lock:
-            return serialize(obj, depth, cache=self._serialize_cache)
+        """Serialize object for JSON output."""
+        return serialize(obj, depth)
 
     @property
     def trace_data(self) -> List[Dict]:
