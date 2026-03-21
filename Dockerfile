@@ -9,6 +9,12 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_ENV=production
 ENV FLASK_DEBUG=false
 
+# Version info - injected at build time
+ARG GIT_BRANCH=unknown
+ARG GIT_COMMIT=unknown
+ENV CHRONOTRACE_GIT_BRANCH=${GIT_BRANCH}
+ENV CHRONOTRACE_GIT_COMMIT=${GIT_COMMIT}
+
 # Create app directory
 WORKDIR /app
 
@@ -23,6 +29,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY chronotrace/ ./chronotrace/
+COPY templates/ ./templates/
+COPY static/ ./static/
+
+# Create data directory for SQLite
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

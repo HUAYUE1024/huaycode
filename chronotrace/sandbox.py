@@ -98,6 +98,9 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         'getattr', 'setattr', 'delattr',
     }
 
+    # Blocked base classes for inheritance
+    blocked_bases = {'type', 'object'}
+
     for node in ast.walk(tree):
         # Block dangerous imports
         if isinstance(node, ast.Import):
@@ -117,6 +120,12 @@ def validate_code_safety(code_string: str) -> Optional[str]:
             if isinstance(node.func, ast.Name):
                 if node.func.id in BLOCKED_BUILTINS:
                     return f"Blocked function call: {node.func.id}"
+
+        # Block class definitions inheriting from blocked bases
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                if isinstance(base, ast.Name) and base.id in blocked_bases:
+                    return f"Blocked inheritance from: {base.id}"
 
         # Block dangerous attribute access
         if isinstance(node, ast.Attribute):

@@ -35,18 +35,36 @@ _USE_SUBPROCESS = platform.system() not in ('Windows', 'Darwin')
 # ==================== Rate Limiter ====================
 
 class RateLimiter:
-    """Simple in-memory rate limiter."""
+    """Simple in-memory rate limiter with cleanup."""
 
     def __init__(self, max_requests: int = 30, window_seconds: int = 60):
         self._lock = threading.Lock()
         self._max_requests = max_requests
         self._window = window_seconds
-        self._requests: Dict[str, List[float]] = defaultdict(list)
+        self._requests: Dict[str, List[float]] = {}
+        self._last_cleanup = time.time()
+
+    def _cleanup(self):
+        """Remove expired entries and empty keys."""
+        now = time.time()
+        if now - self._last_cleanup < 60:  # Cleanup at most once per minute
+            return
+        self._last_cleanup = now
+        expired_keys = []
+        for key, times in self._requests.items():
+            self._requests[key] = [t for t in times if now - t < self._window]
+            if not self._requests[key]:
+                expired_keys.append(key)
+        for key in expired_keys:
+            del self._requests[key]
 
     def is_allowed(self, client_id: str) -> bool:
         now = time.time()
         with self._lock:
-            # Clean old entries
+            self._cleanup()
+            if client_id not in self._requests:
+                self._requests[client_id] = []
+            # Clean old entries for this client
             self._requests[client_id] = [
                 t for t in self._requests[client_id]
                 if now - t < self._window
@@ -59,6 +77,8 @@ class RateLimiter:
     def get_remaining(self, client_id: str) -> int:
         now = time.time()
         with self._lock:
+            if client_id not in self._requests:
+                return self._max_requests
             recent = [t for t in self._requests[client_id] if now - t < self._window]
             return max(0, self._max_requests - len(recent))
 
@@ -76,106 +96,125 @@ def get_client_ip() -> str:
 # ==================== SQLite Persistence ====================
 
 DB_PATH = os.path.join(root_dir, 'data', 'chronotrace.db')
+DB_LOCK = threading.Lock()
+
+
+def get_db_connection():
+    """Get a thread-safe SQLite connection."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=5000')
+    return conn
 
 
 def init_db():
     """Initialize SQLite database."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS executions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp REAL NOT NULL,
-            code_hash TEXT NOT NULL,
-            steps INTEGER NOT NULL,
-            peak_memory INTEGER NOT NULL,
-            total_exec_time REAL NOT NULL,
-            success INTEGER NOT NULL,
-            had_error INTEGER NOT NULL,
-            error TEXT,
-            source_preview TEXT,
-            data_json TEXT NOT NULL
-        )
-    ''')
-    conn.execute('''
-        CREATE INDEX IF NOT EXISTS idx_timestamp ON executions(timestamp)
-    ''')
-    conn.commit()
-    conn.close()
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS executions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    code_hash TEXT NOT NULL,
+                    steps INTEGER NOT NULL,
+                    peak_memory INTEGER NOT NULL,
+                    total_exec_time REAL NOT NULL,
+                    success INTEGER NOT NULL,
+                    had_error INTEGER NOT NULL,
+                    error TEXT,
+                    source_preview TEXT,
+                    data_json TEXT NOT NULL
+                )
+            ''')
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_timestamp ON executions(timestamp)
+            ''')
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def save_execution(data: Dict) -> int:
     """Save execution to database, return row id."""
     import hashlib
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        source = data.get('source', [])
-        code_hash = hashlib.md5(''.join(source).encode()).hexdigest()[:16]
-        trace = data.get('trace', [])
-        peak_mem = max((s.get('memory', 0) for s in trace), default=0)
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            source = data.get('source', [])
+            code_hash = hashlib.md5(''.join(source).encode()).hexdigest()[:16]
+            trace = data.get('trace', [])
+            peak_mem = max((s.get('memory', 0) for s in trace), default=0)
 
-        cursor = conn.execute('''
-            INSERT INTO executions
-            (timestamp, code_hash, steps, peak_memory, total_exec_time,
-             success, had_error, error, source_preview, data_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            time.time(),
-            code_hash,
-            len(trace),
-            peak_mem,
-            data.get('total_exec_time', 0),
-            1 if data.get('success') else 0,
-            1 if data.get('had_error') else 0,
-            data.get('error'),
-            source[0][:100] if source else '',
-            json.dumps(data)
-        ))
-        conn.commit()
-        return cursor.lastrowid
-    finally:
-        conn.close()
+            cursor = conn.execute('''
+                INSERT INTO executions
+                (timestamp, code_hash, steps, peak_memory, total_exec_time,
+                 success, had_error, error, source_preview, data_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                time.time(),
+                code_hash,
+                len(trace),
+                peak_mem,
+                data.get('total_exec_time', 0),
+                1 if data.get('success') else 0,
+                1 if data.get('had_error') else 0,
+                data.get('error'),
+                source[0][:100] if source else '',
+                json.dumps(data)
+            ))
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            conn.close()
 
 
 def load_executions(limit: int = 50) -> List[Dict]:
     """Load recent executions from database."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            'SELECT id, timestamp, steps, peak_memory, total_exec_time, '
-            'success, had_error, source_preview FROM executions '
-            'ORDER BY id DESC LIMIT ?', (limit,)
-        ).fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+    with DB_LOCK:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                'SELECT id, timestamp, steps, peak_memory, total_exec_time, '
+                'success, had_error, source_preview FROM executions '
+                'ORDER BY id DESC LIMIT ?', (limit,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
 
 
 def load_execution(entry_id: int) -> Optional[Dict]:
     """Load single execution by id."""
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        row = conn.execute(
-            'SELECT data_json FROM executions WHERE id = ?', (entry_id,)
-        ).fetchone()
-        if row:
-            return json.loads(row[0])
-        return None
-    finally:
-        conn.close()
+    with DB_LOCK:
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                'SELECT data_json FROM executions WHERE id = ?', (entry_id,)
+            ).fetchone()
+            if row:
+                return json.loads(row[0])
+            return None
+        finally:
+            conn.close()
 
 
 # ==================== In-Memory Store ====================
 
 class ExecutionStore:
-    """Thread-safe in-memory storage (fast access to latest)."""
+    """Thread-safe in-memory storage (fast access to latest).
+    
+    Uses negative IDs to avoid conflicts with SQLite positive IDs.
+    """
 
     def __init__(self, max_history: int = 20):
         self._lock = threading.Lock()
         self._trace_data: Optional[Dict] = None
         self._history: List[Dict] = []
         self._max_history = max_history
+        self._next_id = -1  # Negative IDs for in-memory entries
 
     def set_trace_data(self, data: Dict):
         with self._lock:
@@ -187,7 +226,7 @@ class ExecutionStore:
                 )
                 source = data.get('source', [])
                 entry = {
-                    'id': len(self._history) + 1,
+                    'id': self._next_id,
                     'timestamp': time.time(),
                     'steps': len(data.get('trace', [])),
                     'source_preview': source[0][:60] if source else '',
@@ -195,6 +234,7 @@ class ExecutionStore:
                     'hotspots': data.get('hotspots', []),
                     'data': data
                 }
+                self._next_id -= 1
                 self._history.append(entry)
                 if len(self._history) > self._max_history:
                     self._history = self._history[-self._max_history:]
@@ -580,6 +620,18 @@ def compare_paths(path_a, path_b):
 # ==================== Startup ====================
 
 def start_server(port=5000):
+    # Platform warning
+    current_platform = platform.system()
+    if current_platform in ('Windows', 'Darwin'):
+        print(f"")
+        print(f"{'='*60}")
+        print(f"  WARNING: Running on {current_platform}")
+        print(f"  Subprocess sandbox is DISABLED for performance.")
+        print(f"  Code executes directly in the main process.")
+        print(f"  For production, deploy on Linux with Docker.")
+        print(f"{'='*60}")
+        print(f"")
+
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     app.run(debug=debug_mode, use_reloader=False, port=port)
 
