@@ -126,6 +126,9 @@ def validate_code_safety(code_string: str) -> Optional[str]:
             if isinstance(node.func, ast.Name):
                 if node.func.id in BLOCKED_BUILTINS:
                     return f"Blocked function call: {node.func.id}"
+                # Also block dangerous function names like sleep
+                if node.func.id in dangerous_attr_calls:
+                    return f"Blocked function call: {node.func.id}"
 
         # Block class definitions inheriting from blocked bases
         if isinstance(node, ast.ClassDef):
