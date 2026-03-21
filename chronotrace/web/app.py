@@ -21,9 +21,14 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from chronotrace.sandbox import validate_code_safety, trace_code_sandboxed
+from chronotrace.core import trace_code
+import platform
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+# On Windows, subprocess spawning is slow; use direct tracing in dev
+_USE_SUBPROCESS = platform.system() != 'Windows'
 
 
 class ExecutionStore:
@@ -276,22 +281,29 @@ def run_code():
         }), 403
 
     try:
-        # Execute in sandboxed subprocess - isolates sys.settrace/sys.stdout
-        result = trace_code_sandboxed(code, max_steps=50000, timeout=30)
-
-        # Handle timeout specifically
-        if result.get('timed_out'):
-            return jsonify({
-                'success': False,
-                'error': 'Code execution timed out (30s limit). Try simpler code.',
-                'timed_out': True
-            }), 408
-
-        if result.get('success') or result.get('had_error'):
-            store.set_trace_data(result)
-            return jsonify(result)
+        if _USE_SUBPROCESS:
+            # Linux/Mac: use subprocess for isolation
+            result = trace_code_sandboxed(code, max_steps=50000, timeout=30)
+            
+            # Handle timeout specifically
+            if result.get('timed_out'):
+                return jsonify({
+                    'success': False,
+                    'error': 'Code execution timed out (30s limit). Try simpler code.',
+                    'timed_out': True
+                }), 408
+                
+            result_dict = result
         else:
-            error_msg = result.get('error', 'Unknown error')
+            # Windows: direct execution (subprocess spawn is too slow)
+            trace_result = trace_code(code, max_steps=50000)
+            result_dict = trace_result.to_dict()
+
+        if result_dict.get('success') or result_dict.get('had_error'):
+            store.set_trace_data(result_dict)
+            return jsonify(result_dict)
+        else:
+            error_msg = result_dict.get('error', 'Unknown error')
             return jsonify({'success': False, 'error': error_msg}), 500
 
     except Exception as e:
