@@ -22,13 +22,13 @@ if root_dir not in sys.path:
 
 from chronotrace.sandbox import validate_code_safety, trace_code_sandboxed
 from chronotrace.core import trace_code
-import platform
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # On Windows, subprocess spawning is slow; use direct tracing in dev
-_USE_SUBPROCESS = platform.system() != 'Windows'
+# Also use direct tracing if running in development mode
+_USE_SUBPROCESS = platform.system() not in ('Windows', 'Darwin')  # Skip subprocess on Windows and Mac
 
 
 class ExecutionStore:
