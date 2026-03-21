@@ -295,7 +295,7 @@
 
         async function fetchHistory() {
             try {
-                const res = await fetch('/api/history');
+                const res = await fetch('/api/v1/history');
                 historyData = await res.json();
                 historyCount.textContent = historyData.length;
                 renderHistoryLists();
@@ -372,7 +372,7 @@
             btnCompare.innerHTML = '<i class="ri-loader-4-line spin"></i> 分析中...';
 
             try {
-                const res = await fetch('/api/compare', {
+                const res = await fetch('/api/v1/compare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id_a: selectedA, id_b: selectedB })
@@ -554,8 +554,8 @@
 
             // Fetch full trace data for memory values
             Promise.all([
-                fetch(`/api/history/${data.execution_a.id}`).then(r => r.json()),
-                fetch(`/api/history/${data.execution_b.id}`).then(r => r.json())
+                fetch(`/api/v1/history/${data.execution_a.id}`).then(r => r.json()),
+                fetch(`/api/v1/history/${data.execution_b.id}`).then(r => r.json())
             ]).then(([traceA, traceB]) => {
                 const memA = traceA.trace.map(s => s.memory / 1024);
                 const memB = traceB.trace.map(s => s.memory / 1024);

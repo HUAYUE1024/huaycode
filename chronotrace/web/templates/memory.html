@@ -341,7 +341,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             setupSamplingControls();
             
-            fetch('/api/trace')
+            fetch('/api/v1/trace')
                 .then(res => res.json())
                 .then(data => {
                     traceData = data;

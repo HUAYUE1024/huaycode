@@ -294,7 +294,7 @@
         // --- Data Fetching ---
         async function fetchTraceData() {
             try {
-                const res = await fetch('/api/trace');
+                const res = await fetch('/api/v1/trace');
                 const data = await res.json();
                 
                 if (data && data.trace && data.trace.length > 0) {

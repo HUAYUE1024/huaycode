@@ -71,7 +71,7 @@
                 lineNumbersSidebar.scrollTop = codeScrollArea.scrollTop;
             });
 
-            fetch('/api/trace')
+            fetch('/api/v1/trace')
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.source) {
