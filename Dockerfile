@@ -27,13 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (templates and static are inside chronotrace/web/)
 COPY chronotrace/ ./chronotrace/
-COPY templates/ ./templates/
-COPY static/ ./static/
 
 # Create data directory for SQLite
-RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
+RUN mkdir -p /app/data
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

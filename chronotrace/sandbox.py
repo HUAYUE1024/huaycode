@@ -188,23 +188,39 @@ def _run_in_subprocess(target_fn: Callable, args: tuple, timeout: int = 10) -> D
     process.start()
     process.join(timeout)
 
+    timed_out = False
     if process.is_alive():
+        timed_out = True
         process.kill()
         process.join()
+
+    # Try to get result from queue (may have data even if killed)
+    result = None
+    try:
+        if not result_queue.empty():
+            result = result_queue.get_nowait()
+    except Exception:
+        pass
+
+    if result is not None:
+        # If we got a result but it was a timeout, mark it
+        if timed_out and not result.get('timed_out'):
+            result['timed_out'] = True
+        return result
+
+    if timed_out:
         return {
             'success': False,
-            'error': f'Execution timed out after {timeout} seconds',
+            'error': f'Execution timed out after {timeout} seconds. Possible infinite loop.',
             'timed_out': True,
         }
 
-    if result_queue.empty():
-        return {
-            'success': False,
-            'error': 'Process terminated unexpectedly',
-            'timed_out': False,
-        }
-
-    return result_queue.get_nowait()
+    # Process ended without timeout but no result
+    return {
+        'success': False,
+        'error': 'Process terminated unexpectedly. Code may have crashed.',
+        'timed_out': False,
+    }
 
 
 def _exec_worker(code: str, result_queue):

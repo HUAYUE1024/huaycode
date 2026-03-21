@@ -11,6 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 
+class MaxStepsExceededError(Exception):
+    """Raised when execution exceeds maximum allowed steps."""
+    pass
+
+
 @dataclass
 class TraceResult:
     """Complete trace result."""
@@ -206,8 +211,9 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
     def trace_func(frame, event, arg):
         nonlocal previous_time, previous_memory, step_count
 
+        # Check max_steps and raise exception to stop execution
         if step_count >= max_steps:
-            return None
+            raise MaxStepsExceededError(f"Execution exceeded maximum steps ({max_steps})")
 
         filename = frame.f_code.co_filename
         if filename != "<string>":
@@ -288,6 +294,11 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
         exec(code_string, {'__name__': '__main__'})
         result.success = True
         result.had_error = False
+    except MaxStepsExceededError as e:
+        result.success = True
+        result.had_error = True
+        result.error = f"Execution exceeded maximum steps ({max_steps}). Possible infinite loop."
+        context.add_output({'timestamp': time.time(), 'content': f"\nError: {result.error}"})
     except Exception as e:
         result.success = True
         result.had_error = True
