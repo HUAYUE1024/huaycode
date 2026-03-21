@@ -86,6 +86,15 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         '__import__', '__loader__', '__class__',
         '__getattribute__', '__setattr__', '__delattr__',
         '__init_subclass__', '__setitem__', '__getitem__',
+        '__dict__', '__weakref__',
+    }
+
+    # Keys that must not be accessed via subscript on any object
+    dangerous_subscript_keys = {
+        'eval', 'exec', 'compile', '__import__',
+        'open', 'input', 'breakpoint',
+        'globals', 'locals', 'vars',
+        'getattr', 'setattr', 'delattr',
     }
 
     for node in ast.walk(tree):
@@ -102,7 +111,7 @@ def validate_code_safety(code_string: str) -> Optional[str]:
                 if module in BLOCKED_MODULES:
                     return f"Blocked import from: {node.module}"
 
-        # Block dangerous function calls
+        # Block dangerous function calls (direct)
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name):
                 if node.func.id in BLOCKED_BUILTINS:
@@ -112,6 +121,29 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         if isinstance(node, ast.Attribute):
             if node.attr in dangerous_attrs:
                 return f"Blocked attribute access: {node.attr}"
+
+        # Block subscript access to dangerous keys (e.g., __builtins__["eval"])
+        if isinstance(node, ast.Subscript):
+            # Check for string key access: obj["key"]
+            if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                key = node.slice.value
+                # Block access to dangerous builtins via subscript
+                if key in dangerous_subscript_keys or key in BLOCKED_BUILTINS:
+                    return f"Blocked subscript access: {key}"
+                # Block access to __builtins__ or dangerous attrs
+                if key in dangerous_attrs:
+                    return f"Blocked subscript access: {key}"
+            # Also block __builtins__[variable] patterns
+            if isinstance(node.value, ast.Name) and node.value.id == '__builtins__':
+                return "Blocked access to __builtins__"
+
+        # Block calls on subscript results (e.g., __builtins__["eval"](...))
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Subscript):
+                if isinstance(node.func.slice, ast.Constant) and isinstance(node.func.slice.value, str):
+                    key = node.func.slice.value
+                    if key in dangerous_subscript_keys or key in BLOCKED_BUILTINS:
+                        return f"Blocked function call via subscript: {key}"
 
     return None
 
