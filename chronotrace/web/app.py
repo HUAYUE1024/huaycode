@@ -99,6 +99,8 @@ def add_security_headers(response):
 
     if '/static/' in request.path:
         response.headers['Cache-Control'] = 'public, max-age=86400'
+    elif request.path.endswith('.html') or request.path == '/' or '/api/' in request.path:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
 
     return response
 
