@@ -279,17 +279,25 @@ def run_code():
         # Execute in sandboxed subprocess - isolates sys.settrace/sys.stdout
         result = trace_code_sandboxed(code, max_steps=50000, timeout=30)
 
+        # Handle timeout specifically
+        if result.get('timed_out'):
+            return jsonify({
+                'success': False,
+                'error': 'Code execution timed out (30s limit). Try simpler code.',
+                'timed_out': True
+            }), 408
+
         if result.get('success') or result.get('had_error'):
             store.set_trace_data(result)
             return jsonify(result)
         else:
             error_msg = result.get('error', 'Unknown error')
-            return jsonify({'error': error_msg}), 500
+            return jsonify({'success': False, 'error': error_msg}), 500
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def compute_diff(trace_a, trace_b, source_a, source_b):
