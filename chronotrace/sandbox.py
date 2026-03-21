@@ -98,6 +98,12 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         'getattr', 'setattr', 'delattr',
     }
 
+    # Dangerous attribute calls (e.g., time.sleep, os.system)
+    dangerous_attr_calls = {
+        'sleep', 'system', 'popen', 'spawn', 'execv', 'execve',
+        'fork', 'kill', 'signal',
+    }
+
     # Blocked base classes for inheritance (type is blocked, object is allowed)
     blocked_bases = {'type'}
 
@@ -154,6 +160,12 @@ def validate_code_safety(code_string: str) -> Optional[str]:
                     key = node.func.slice.value
                     if key in dangerous_subscript_keys or key in BLOCKED_BUILTINS:
                         return f"Blocked function call via subscript: {key}"
+
+        # Block dangerous attribute calls (e.g., time.sleep, os.system)
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr in dangerous_attr_calls:
+                    return f"Blocked dangerous call: {node.func.attr}"
 
     return None
 

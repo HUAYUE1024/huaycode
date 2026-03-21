@@ -203,13 +203,20 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
 
     tracemalloc.start()
     start_time = time.perf_counter_ns()
+    wall_start = time.time()
     previous_time = start_time
     previous_memory = 0  # Track memory delta correctly
     step_times: Dict[int, int] = {}
     step_count = 0
+    # Default timeout for wall-clock check (independent of max_steps)
+    execution_timeout = 30.0  # seconds
 
     def trace_func(frame, event, arg):
         nonlocal previous_time, previous_memory, step_count
+
+        # Wall-clock timeout check (catches infinite loops even without line events)
+        if time.time() - wall_start > execution_timeout:
+            raise TimeoutError(f"Execution timed out after {execution_timeout}s. Possible infinite loop.")
 
         # Check max_steps and raise exception to stop execution
         if step_count >= max_steps:
@@ -294,6 +301,11 @@ def trace_code(code_string: str, max_steps: int = 50000) -> TraceResult:
         exec(code_string, {'__name__': '__main__'})
         result.success = True
         result.had_error = False
+    except TimeoutError as e:
+        result.success = True
+        result.had_error = True
+        result.error = str(e)
+        context.add_output({'timestamp': time.time(), 'content': f"\nError: {result.error}"})
     except MaxStepsExceededError as e:
         result.success = True
         result.had_error = True
