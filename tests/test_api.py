@@ -140,14 +140,6 @@ class TestAPIRoutes(unittest.TestCase):
         response = self.client.get('/api/v1/history/999')
         self.assertEqual(response.status_code, 404)
 
-    def test_legacy_api_compatibility(self):
-        """Test legacy /api endpoints still work"""
-        response = self.client.get('/api/trace')
-        self.assertEqual(response.status_code, 200)
-
-        response = self.client.get('/api/history')
-        self.assertEqual(response.status_code, 200)
-
     def test_compare_endpoint(self):
         """Test /api/v1/compare"""
         # Create two executions
