@@ -15,6 +15,7 @@ BLOCKED_MODULES = {
     'ctypes', 'multiprocessing', 'threading',
     'importlib', 'pkgutil',
     'shelve', 'pickle',
+    'builtins', '_thread',  # Critical: prevent sandbox escape
 }
 
 # Modules allowed for teaching purposes
