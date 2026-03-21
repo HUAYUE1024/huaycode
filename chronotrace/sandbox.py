@@ -98,8 +98,8 @@ def validate_code_safety(code_string: str) -> Optional[str]:
         'getattr', 'setattr', 'delattr',
     }
 
-    # Blocked base classes for inheritance
-    blocked_bases = {'type', 'object'}
+    # Blocked base classes for inheritance (type is blocked, object is allowed)
+    blocked_bases = {'type'}
 
     for node in ast.walk(tree):
         # Block dangerous imports
