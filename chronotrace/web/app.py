@@ -90,7 +90,6 @@ class RateLimiter:
             if client_id not in self._requests:
                 return self._max_requests
             return max(0, self._max_requests - len(self._requests[client_id]))
-            return max(0, self._max_requests - len(recent))
 
 
 # Rate limiters: 30 requests/min for run, 120/min for others
