@@ -20,8 +20,8 @@ BLOCKED_MODULES = {
 
 # Modules allowed for teaching purposes
 ALLOWED_MODULES = {
-    'pathlib', 'inspect', 'collections', 'itertools',
-    'math', 'json', 'csv', 're',
+    'pathlib', 'collections', 'itertools',
+    'math', 'json', 'csv',
     'functools', 'operator', 'string', 'textwrap',
     'datetime', 'time', 'calendar',
     'copy', 'pprint', 'enum', 'dataclasses',

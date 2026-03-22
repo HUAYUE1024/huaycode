@@ -39,21 +39,22 @@ _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='trace')
 # ==================== Rate Limiter ====================
 
 class RateLimiter:
-    """Simple in-memory rate limiter with cleanup."""
+    """Simple in-memory rate limiter with periodic cleanup."""
 
     def __init__(self, max_requests: int = 30, window_seconds: int = 60):
         self._lock = threading.Lock()
         self._max_requests = max_requests
         self._window = window_seconds
         self._requests: Dict[str, List[float]] = {}
-        self._last_cleanup = time.time()
+        self._last_full_cleanup = time.time()
 
-    def _cleanup(self):
-        """Remove expired entries and empty keys."""
+    def _full_cleanup(self):
+        """Remove all expired entries (called periodically)."""
         now = time.time()
-        if now - self._last_cleanup < 60:  # Cleanup at most once per minute
+        # Only do full cleanup every 60 seconds
+        if now - self._last_full_cleanup < 60:
             return
-        self._last_cleanup = now
+        self._last_full_cleanup = now
         expired_keys = []
         for key, times in self._requests.items():
             self._requests[key] = [t for t in times if now - t < self._window]
@@ -62,17 +63,21 @@ class RateLimiter:
         for key in expired_keys:
             del self._requests[key]
 
-    def is_allowed(self, client_id: str) -> bool:
-        now = time.time()
-        with self._lock:
-            self._cleanup()
-            if client_id not in self._requests:
-                self._requests[client_id] = []
-            # Clean old entries for this client
+    def _clean_client(self, client_id: str, now: float):
+        """Clean expired entries for a specific client."""
+        if client_id in self._requests:
             self._requests[client_id] = [
                 t for t in self._requests[client_id]
                 if now - t < self._window
             ]
+
+    def is_allowed(self, client_id: str) -> bool:
+        now = time.time()
+        with self._lock:
+            self._full_cleanup()
+            self._clean_client(client_id, now)
+            if client_id not in self._requests:
+                self._requests[client_id] = []
             if len(self._requests[client_id]) >= self._max_requests:
                 return False
             self._requests[client_id].append(now)
@@ -81,9 +86,10 @@ class RateLimiter:
     def get_remaining(self, client_id: str) -> int:
         now = time.time()
         with self._lock:
+            self._clean_client(client_id, now)
             if client_id not in self._requests:
                 return self._max_requests
-            recent = [t for t in self._requests[client_id] if now - t < self._window]
+            return max(0, self._max_requests - len(self._requests[client_id]))
             return max(0, self._max_requests - len(recent))
 
 
