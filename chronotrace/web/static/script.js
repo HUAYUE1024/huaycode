@@ -1,4 +1,11 @@
 
+// HTML escape function to prevent XSS
+function escapeHtml(str) {
+    if (typeof str !== 'string') return String(str);
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return str.replace(/[&<>"']/g, c => map[c]);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // State Management
@@ -460,12 +467,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function formatValue(val) {
-        if (typeof val === 'string') return `"${val}"`;
+        if (typeof val === 'string') return `"${escapeHtml(val)}"`;
         if (typeof val === 'object' && val !== null) {
             if (Array.isArray(val)) return `[${val.length} items]`;
             return `{...}`;
         }
-        return String(val);
+        return escapeHtml(String(val));
     }
 
     function renderStepInsight(step, prevStep) {

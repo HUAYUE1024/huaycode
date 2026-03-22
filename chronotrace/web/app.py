@@ -440,6 +440,10 @@ def compare_executions():
     id_a = data.get('id_a')
     id_b = data.get('id_b')
 
+    # Check for same ID comparison
+    if id_a == id_b:
+        return jsonify({'error': 'Cannot compare an execution with itself'}), 400
+
     entry_a = store.get_history_entry(id_a) or load_execution(id_a)
     entry_b = store.get_history_entry(id_b) or load_execution(id_b)
 
@@ -493,8 +497,17 @@ def run_code():
     if not code:
         return jsonify({'success': False, 'error': 'No code provided'}), 400
 
+    # Type check: code must be a string
+    if not isinstance(code, str):
+        return jsonify({'success': False, 'error': 'Code must be a string'}), 400
+
     if len(code) > 50000:
         return jsonify({'success': False, 'error': 'Code exceeds maximum length (50000 chars)'}), 400
+
+    # Get optional max_steps parameter (default 50000)
+    max_steps = data.get('max_steps', 50000)
+    if not isinstance(max_steps, int) or max_steps < 1 or max_steps > 100000:
+        max_steps = 50000
 
     # Validate code safety
     safety_error = validate_code_safety(code)
@@ -507,9 +520,9 @@ def run_code():
     def execute_trace():
         """Execute trace in thread pool."""
         if _USE_SUBPROCESS:
-            return trace_code_sandboxed(code, max_steps=50000, timeout=30)
+            return trace_code_sandboxed(code, max_steps=max_steps, timeout=30)
         else:
-            trace_result = trace_code(code, max_steps=50000)
+            trace_result = trace_code(code, max_steps=max_steps)
             return trace_result.to_dict()
 
     try:
