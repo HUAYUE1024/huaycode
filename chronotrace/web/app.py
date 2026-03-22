@@ -13,6 +13,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 # Ensure we can import from parent directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,9 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # On Windows/Mac, subprocess spawn is slow; use direct tracing
 _USE_SUBPROCESS = platform.system() not in ('Windows', 'Darwin')
+
+# Thread pool for async code execution
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='trace')
 
 
 # ==================== Rate Limiter ====================
@@ -465,12 +469,11 @@ def compare_executions():
 
 @app.route('/api/v1/run', methods=['POST'])
 def run_code():
-    """Execute code with tracing."""
+    """Execute code with tracing using async thread pool."""
     client_ip = get_client_ip()
 
     # Rate limiting
     if not run_limiter.is_allowed(client_ip):
-        remaining = run_limiter.get_remaining(client_ip)
         return jsonify({
             'success': False,
             'error': 'Rate limit exceeded. Please wait before retrying.',
@@ -496,22 +499,35 @@ def run_code():
             'error': f'Security check failed: {safety_error}'
         }), 403
 
-    try:
+    def execute_trace():
+        """Execute trace in thread pool."""
         if _USE_SUBPROCESS:
-            result = trace_code_sandboxed(code, max_steps=50000, timeout=30)
-
-            if result.get('timed_out'):
-                return jsonify({
-                    'success': False,
-                    'error': 'Execution timed out (30s limit). Possible infinite loop or too many iterations.',
-                    'timed_out': True,
-                    'hint': 'Try reducing loop iterations or adding break conditions.'
-                }), 408
-
-            result_dict = result
+            return trace_code_sandboxed(code, max_steps=50000, timeout=30)
         else:
             trace_result = trace_code(code, max_steps=50000)
-            result_dict = trace_result.to_dict()
+            return trace_result.to_dict()
+
+    try:
+        # Submit to thread pool with timeout
+        future = _executor.submit(execute_trace)
+        try:
+            result_dict = future.result(timeout=35)  # 35s timeout (slightly more than subprocess 30s)
+        except FuturesTimeout:
+            future.cancel()
+            return jsonify({
+                'success': False,
+                'error': 'Execution timed out (35s limit). Possible infinite loop or too many iterations.',
+                'timed_out': True,
+                'hint': 'Try reducing loop iterations or adding break conditions.'
+            }), 408
+
+        if result_dict.get('timed_out'):
+            return jsonify({
+                'success': False,
+                'error': 'Execution timed out (30s limit). Possible infinite loop or too many iterations.',
+                'timed_out': True,
+                'hint': 'Try reducing loop iterations or adding break conditions.'
+            }), 408
 
         if result_dict.get('success') or result_dict.get('had_error'):
             # Save to memory and database

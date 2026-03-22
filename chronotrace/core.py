@@ -72,6 +72,8 @@ def analyze_ast(code_string: str) -> Dict:
 
 
 class StreamCapturer:
+    """Captures stdout/stderr while preserving original stream behavior."""
+
     def __init__(self, original_stream, output_list: List[Dict]):
         self.original_stream = original_stream
         self.output_list = output_list
@@ -84,6 +86,21 @@ class StreamCapturer:
 
     def flush(self):
         self.original_stream.flush()
+
+    # Delegate common stream attributes
+    @property
+    def encoding(self):
+        return getattr(self.original_stream, 'encoding', 'utf-8')
+
+    @property
+    def errors(self):
+        return getattr(self.original_stream, 'errors', 'strict')
+
+    def fileno(self):
+        return self.original_stream.fileno()
+
+    def isatty(self):
+        return self.original_stream.isatty()
 
 
 _MAX_SERIALIZE_ITEMS = 50
