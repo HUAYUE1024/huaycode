@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     function init() {
         // Initialize Settings
-        state.playSpeed = localStorage.getItem('huay_speed') || 100;
+        state.playSpeed = parseInt(localStorage.getItem('huay_speed')) || 100;
         state.autoScroll = localStorage.getItem('huay_autoscroll') !== 'false';
         
         // Listen for storage changes (settings sync)

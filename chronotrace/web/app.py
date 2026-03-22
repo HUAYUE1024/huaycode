@@ -98,8 +98,12 @@ api_limiter = RateLimiter(max_requests=120, window_seconds=60)
 
 
 def get_client_ip() -> str:
-    """Get client IP, respecting proxies."""
-    return request.headers.get('X-Forwarded-For', request.remote_addr)
+    """Get client IP, respecting proxies (takes first IP from X-Forwarded-For)."""
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        # Take only the first IP (leftmost is the original client)
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or '127.0.0.1'
 
 
 # ==================== SQLite Persistence ====================
@@ -409,6 +413,9 @@ def get_history():
                 'peak_memory': entry['peak_memory'],
                 'hotspots_count': 0
             })
+
+    # Sort by timestamp descending (newest first)
+    summary.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
 
     return jsonify(summary[:50])
 
